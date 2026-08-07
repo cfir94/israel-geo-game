@@ -30,6 +30,7 @@
           <p>משחק מורי הדרך</p>
         </div>
       </div>
+      <button class="icon-btn" id="btn-account" aria-label="חשבון">👤</button>
       <button class="icon-btn" id="btn-settings" aria-label="הגדרות">⚙️</button>
     </header>
 
@@ -50,6 +51,9 @@
     <div class="home-extra">
       <button class="ghost-btn" id="btn-atlas">📖 אטלס האתרים</button>
       <button class="ghost-btn" id="btn-daily">🔥 אתגר יומי</button>
+    </div>
+    <div class="home-extra" id="board-row" hidden>
+      <button class="ghost-btn" id="btn-board">🏅 לוח הקבוצה</button>
     </div>
 
     <footer class="credit">נבנה עבור מורי דרך בישראל · <span id="site-count">0</span> אתרים · 13 אזורים</footer>
@@ -178,6 +182,62 @@
     </div>
   </div>
 
+  <!-- ==================== לוח הקבוצה ==================== -->
+  <section class="screen" id="screen-board">
+    <header class="bar">
+      <button class="icon-btn" data-back="home">→</button>
+      <div class="bar-title"><span>🏅</span><h2>לוח הקבוצה</h2></div>
+      <button class="icon-btn" id="board-refresh" aria-label="רענון">↻</button>
+    </header>
+    <p class="mode-desc">כל מי שמחובר לאותו משחק, לפי ניקוד. השמות בלבד — ההתקדמות עצמה של כל אחד פרטית.</p>
+    <div class="board-list" id="board-list"></div>
+  </section>
+
+  <!-- ==================== חשבון ==================== -->
+  <div class="sheet" id="account">
+    <div class="sheet-card">
+      <div class="sheet-grab"></div>
+
+      <div id="acc-out">
+        <h3 id="acc-title">התחברות</h3>
+        <p class="acc-lead" id="acc-lead">חשבון שומר את ההתקדמות בענן — אפשר להמשיך מכל מכשיר, וההתקדמות לא נעלמת אם הדפדפן מנקה נתונים.</p>
+        <div class="seg" id="acc-tabs">
+          <button data-acc-tab="in" class="on">התחברות</button>
+          <button data-acc-tab="up">חשבון חדש</button>
+        </div>
+        <label class="fld" id="fld-name" hidden><span>שם לתצוגה</span>
+          <input id="acc-name" type="text" autocomplete="nickname" placeholder="איך שיופיע בלוח הקבוצה"></label>
+        <label class="fld"><span>אימייל</span>
+          <input id="acc-email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com"></label>
+        <label class="fld"><span>סיסמה</span>
+          <input id="acc-pass" type="password" autocomplete="current-password" placeholder="לפחות 6 תווים"></label>
+        <p class="acc-err" id="acc-err"></p>
+        <button class="pill-btn primary" id="acc-submit">התחברות</button>
+        <button class="text-btn" id="acc-guest">להמשיך בלי חשבון</button>
+      </div>
+
+      <div id="acc-in" hidden>
+        <div class="acc-who">
+          <span class="acc-avatar" id="acc-initial">?</span>
+          <div>
+            <h3 id="acc-who-name">—</h3>
+            <p id="acc-who-mail"></p>
+          </div>
+        </div>
+        <div class="acc-stats">
+          <div><b id="acc-xp">0</b><span>נקודות</span></div>
+          <div><b id="acc-stars">0</b><span>כוכבים</span></div>
+        </div>
+        <p class="acc-sync" id="acc-sync">מסונכרן</p>
+        <button class="pill-btn ghost" id="acc-board">🏅 לוח הקבוצה</button>
+        <button class="pill-btn ghost" id="acc-signout">יציאה מהחשבון</button>
+      </div>
+
+      <p class="fineprint" id="acc-note"></p>
+      <button class="text-btn" id="account-close">סגירה</button>
+    </div>
+  </div>
+
   <!-- ==================== הגדרות ==================== -->
   <div class="sheet" id="settings">
     <div class="sheet-card">
@@ -202,6 +262,8 @@
   <div class="toast" id="toast"></div>
 </div>
 
+<script src="js/config.js"></script>
+<script src="js/cloud.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/data.js"></script>
 <script src="js/guide.js"></script>

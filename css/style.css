@@ -688,3 +688,50 @@ p { margin: 0; }
 
 .set-label { font-size: 12px; font-weight: 700; color: var(--txt-dim); margin-top: 6px; }
 #storage-note.warn { color: var(--red); font-weight: 700; }
+
+/* ============================================================
+   חשבון, סנכרון ולוח קבוצה
+   ============================================================ */
+.acc-lead { font-size: 13px; color: var(--txt-dim); line-height: 1.6; margin: 8px 0 4px; }
+.fld { display: block; margin-bottom: 12px; }
+.fld span { display: block; font-size: 12px; font-weight: 700; color: var(--txt-dim); margin-bottom: 6px; }
+.fld input {
+  width: 100%; border: 1px solid var(--line); background: var(--card);
+  color: var(--txt); font: inherit; font-size: 16px;
+  border-radius: 14px; padding: 13px 15px;
+}
+.fld input:focus { outline: 2px solid var(--teal); outline-offset: 1px; border-color: transparent; }
+.acc-err { font-size: 13px; color: var(--red); font-weight: 700; min-height: 19px; margin-bottom: 6px; }
+#account .pill-btn { width: 100%; margin-top: 4px; }
+#account .text-btn { width: 100%; }
+
+.acc-who { display: flex; align-items: center; gap: 13px; margin-bottom: 16px; }
+.acc-avatar {
+  width: 52px; height: 52px; border-radius: 50%; flex: 0 0 52px;
+  display: grid; place-items: center; font-size: 22px; font-weight: 900;
+  background: linear-gradient(140deg, var(--teal), var(--blue)); color: var(--on-accent);
+}
+.acc-who h3 { font-size: 19px; }
+.acc-who p { font-size: 12.5px; color: var(--txt-dim); margin-top: 3px; }
+.acc-stats { display: flex; gap: 10px; margin-bottom: 12px; }
+.acc-stats > div { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 13px 6px; text-align: center; }
+.acc-stats b { display: block; font-size: 21px; color: var(--gold); }
+.acc-stats span { font-size: 11px; color: var(--txt-dim); }
+.acc-sync { font-size: 12px; color: var(--txt-dim); text-align: center; margin-bottom: 14px; }
+.acc-sync.busy { color: var(--gold); }
+.acc-sync.err  { color: var(--red); font-weight: 700; }
+
+#btn-account.linked { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 16%, transparent); }
+
+.board-list { display: grid; gap: 8px; padding-bottom: 20px; }
+.board-row {
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--line); background: var(--card);
+  border-radius: var(--r-md); padding: 13px 15px;
+}
+.board-row .rank { font-size: 15px; font-weight: 900; color: var(--txt-dim); min-width: 26px; }
+.board-row.top1 .rank, .board-row.top2 .rank, .board-row.top3 .rank { color: var(--star); }
+.board-row.me { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 12%, transparent); }
+.board-row b { flex: 1; font-size: 14.5px; }
+.board-row .sc { font-size: 13px; font-weight: 800; color: var(--gold); direction: ltr; unicode-bidi: isolate; }
+.board-empty { text-align: center; color: var(--txt-dim); font-size: 13.5px; padding: 30px 10px; line-height: 1.6; }

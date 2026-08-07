@@ -75,13 +75,85 @@ function load() {
     return { ...DEFAULT_SAVE, ...d, stars: d.stars || {}, best: d.best || {}, seen: d.seen || {} };
   } catch (e) { return { ...DEFAULT_SAVE }; }
 }
-function persist() { Store.set(JSON.stringify(SAVE)); }
+function persist() {
+  Store.set(JSON.stringify(SAVE));
+  cloudPushSoon();
+}
+
+/* --------------------------------------------- סנכרון ענן ----
+   כל שמירה מקומית מתזמנת דחיפה לשרת. הדחיפות מקובצות כדי שלא
+   נפנה לשרת על כל תשובה בנפרד; אם אין חשבון – לא קורה כלום.  */
+let pushTimer = null, syncState = 'idle';
+
+function cloudStats() {
+  let stars = 0;
+  for (const m in SAVE.stars) for (const l in SAVE.stars[m]) stars += SAVE.stars[m][l];
+  return { xp: SAVE.xp || 0, stars };
+}
+
+function cloudPushSoon(delay = 1500) {
+  if (!Cloud.enabled || !Cloud.current()) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(cloudPushNow, delay);
+}
+
+async function cloudPushNow() {
+  if (!Cloud.enabled || !Cloud.current()) return;
+  clearTimeout(pushTimer);
+  setSync('busy');
+  try {
+    /* קוראים את מה שיש בשרת וממזגים לפני הכתיבה, אחרת מכשיר
+       אחד היה מוחק התקדמות שנעשתה בינתיים במכשיר אחר. */
+    const remote = await Cloud.pull();
+    if (remote) {
+      const before = JSON.stringify(SAVE);
+      SAVE = Cloud.merge(SAVE, remote);
+      if (JSON.stringify(SAVE) !== before) {
+        Store.set(JSON.stringify(SAVE));
+        renderHUD();
+      }
+    }
+    await Cloud.push(SAVE, cloudStats());
+    setSync('ok');
+  } catch (e) {
+    setSync('err', e.message);
+  }
+}
+
+function setSync(state, msg) {
+  syncState = state;
+  const el = $('#acc-sync');
+  if (!el) return;
+  el.className = 'acc-sync' + (state === 'busy' ? ' busy' : state === 'err' ? ' err' : '');
+  el.textContent = state === 'busy' ? 'מסנכרן…'
+    : state === 'err' ? ('הסנכרון נכשל – ' + (msg || 'ננסה שוב בשמירה הבאה'))
+    : 'מסונכרן ✓';
+}
 
 /* שמירה נוספת ברגעים שבהם הדפדפן עלול להשליך את הדף */
-['pagehide', 'beforeunload'].forEach(ev => window.addEventListener(ev, persist));
+['pagehide', 'beforeunload'].forEach(ev => window.addEventListener(ev, () => {
+  Store.set(JSON.stringify(SAVE));
+  if (Cloud.enabled && Cloud.current()) cloudPushNow();
+}));
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') persist();
 });
+
+/* מאחד את ההתקדמות שבשרת עם זו שבמכשיר, ושומר את התוצאה בשניהם */
+async function cloudSyncIn() {
+  if (!Cloud.enabled || !Cloud.current()) return;
+  setSync('busy');
+  try {
+    const remote = await Cloud.pull();
+    if (remote) SAVE = Cloud.merge(SAVE, remote);
+    Store.set(JSON.stringify(SAVE));
+    await Cloud.push(SAVE, cloudStats());
+    setSync('ok');
+    renderHUD(); renderModes();
+  } catch (e) {
+    setSync('err', e.message);
+  }
+}
 
 /* --------------------------------------------- ערכת נושא ---- */
 function applyTheme() {
@@ -1006,6 +1078,141 @@ function showZoomHint() {
   setTimeout(() => h.classList.remove('on'), 4200);
 }
 
+/* --------------------------------------------- חשבון ---- */
+let accTab = 'in';
+
+function openAccount() {
+  SFX.tap();
+  renderAccount();
+  $('#account').classList.add('on');
+}
+
+function renderAccount() {
+  const me = Cloud.current();
+  const note = $('#acc-note');
+
+  if (!Cloud.enabled) {
+    $('#acc-out').hidden = true;
+    $('#acc-in').hidden = true;
+    note.textContent = 'החשבונות אינם מוגדרים בעותק הזה. ההתקדמות נשמרת במכשיר בלבד. ' +
+      'להפעלה: מלאו את js/config.js לפי ההוראות ב-README.';
+    return;
+  }
+  note.textContent = '';
+
+  if (me) {
+    $('#acc-out').hidden = true;
+    $('#acc-in').hidden = false;
+    const nm = me.display_name || me.email || 'מחובר';
+    $('#acc-initial').textContent = (nm.trim()[0] || '?').toUpperCase();
+    $('#acc-who-name').textContent = nm;
+    $('#acc-who-mail').textContent = me.email || '';
+    const st = cloudStats();
+    $('#acc-xp').textContent = st.xp;
+    $('#acc-stars').textContent = st.stars;
+    setSync(syncState);
+  } else {
+    $('#acc-out').hidden = false;
+    $('#acc-in').hidden = true;
+    $('#acc-err').textContent = '';
+    setAccTab(accTab);
+  }
+}
+
+function setAccTab(tab) {
+  accTab = tab;
+  $$('#acc-tabs button').forEach(b => b.classList.toggle('on', b.dataset.accTab === tab));
+  $('#fld-name').hidden = tab !== 'up';
+  $('#acc-title').textContent = tab === 'up' ? 'חשבון חדש' : 'התחברות';
+  $('#acc-submit').textContent = tab === 'up' ? 'יצירת חשבון' : 'התחברות';
+  $('#acc-pass').setAttribute('autocomplete', tab === 'up' ? 'new-password' : 'current-password');
+  $('#acc-err').textContent = '';
+}
+
+async function submitAccount() {
+  const email = $('#acc-email').value.trim();
+  const pass = $('#acc-pass').value;
+  const name = $('#acc-name').value.trim();
+  const err = $('#acc-err');
+  err.textContent = '';
+
+  if (!email || !pass) { err.textContent = 'צריך אימייל וסיסמה'; return; }
+  if (accTab === 'up' && pass.length < 6) { err.textContent = 'הסיסמה צריכה להיות באורך 6 תווים לפחות'; return; }
+  if (accTab === 'up' && !name) { err.textContent = 'צריך שם לתצוגה'; return; }
+
+  const btn = $('#acc-submit');
+  btn.disabled = true;
+  btn.textContent = 'רגע…';
+  try {
+    if (accTab === 'up') await Cloud.signUp(email, pass, name);
+    else await Cloud.signIn(email, pass);
+    await cloudSyncIn();
+    renderAccount();
+    renderHUD();
+    updateAccountChip();
+    SFX.coin();
+  } catch (e) {
+    err.textContent = friendlyAuthError(e);
+    SFX.bad();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = accTab === 'up' ? 'יצירת חשבון' : 'התחברות';
+  }
+}
+
+function friendlyAuthError(e) {
+  const m = (e && e.message || '').toLowerCase();
+  if (e && e.needsConfirm) return e.message;
+  if (m.includes('invalid login')) return 'אימייל או סיסמה שגויים';
+  if (m.includes('already registered') || m.includes('already been registered')) return 'האימייל הזה כבר רשום – נסו להתחבר';
+  if (m.includes('failed to fetch') || m.includes('networkerror')) return 'אין חיבור לשרת. בדקו אינטרנט, או שהפרויקט בהשהיה';
+  if (m.includes('password')) return 'הסיסמה קצרה מדי';
+  return e.message || 'משהו השתבש';
+}
+
+function updateAccountChip() {
+  const btn = $('#btn-account');
+  const me = Cloud.enabled && Cloud.current();
+  btn.classList.toggle('linked', !!me);
+  btn.textContent = me ? ((me.display_name || me.email || '?').trim()[0] || '?').toUpperCase() : '👤';
+  $('#board-row').hidden = !me;
+}
+
+function doSignOut() {
+  Cloud.signOut();
+  updateAccountChip();
+  renderAccount();
+  toast('יצאת מהחשבון. ההתקדמות נשארה במכשיר');
+}
+
+/* ------------------------------------------ לוח הקבוצה ---- */
+async function openBoard() {
+  show('board');
+  const list = $('#board-list');
+  list.innerHTML = '<div class="board-empty">טוען…</div>';
+  try {
+    const rows = await Cloud.leaderboard();
+    const me = Cloud.current();
+    if (!rows.length) {
+      list.innerHTML = '<div class="board-empty">עדיין אין תוצאות.<br>סיימו שלב וההתקדמות תופיע כאן.</div>';
+      return;
+    }
+    list.innerHTML = rows.map((r, i) => `
+      <div class="board-row ${i < 3 ? 'top' + (i + 1) : ''} ${me && r.display_name === me.display_name ? 'me' : ''}">
+        <span class="rank">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</span>
+        <b>${escapeHtml(r.display_name)}</b>
+        <span class="sc">${r.xp} נק׳ · ${r.stars} ★</span>
+      </div>`).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="board-empty">לא הצלחנו לטעון את הלוח.<br>' + escapeHtml(friendlyAuthError(e)) + '</div>';
+  }
+}
+
+function escapeHtml(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 /* ------------------------------------------ גרירת סיכה ---- */
 let drag = null;
 
@@ -1096,6 +1303,18 @@ function bind() {
   $('#sheet-close').onclick = () => { $('#sheet').classList.remove('on'); if (currentScreen === 'atlas') renderAtlasList(); };
   $('#sheet').onclick = e => { if (e.target.id === 'sheet') $('#sheet-close').click(); };
 
+  $('#btn-account').onclick = openAccount;
+  $('#account-close').onclick = () => $('#account').classList.remove('on');
+  $('#account').onclick = e => { if (e.target.id === 'account') $('#account').classList.remove('on'); };
+  $('#acc-guest').onclick = () => { $('#account').classList.remove('on'); };
+  $$('#acc-tabs button').forEach(b => b.onclick = () => { SFX.tap(); setAccTab(b.dataset.accTab); });
+  $('#acc-submit').onclick = submitAccount;
+  $('#acc-pass').addEventListener('keydown', e => { if (e.key === 'Enter') submitAccount(); });
+  $('#acc-signout').onclick = doSignOut;
+  $('#acc-board').onclick = () => { $('#account').classList.remove('on'); openBoard(); };
+  $('#btn-board').onclick = () => { SFX.tap(); openBoard(); };
+  $('#board-refresh').onclick = () => { SFX.tap(); openBoard(); };
+
   $('#btn-settings').onclick = () => { SFX.tap(); $('#settings').classList.add('on'); };
   $('#settings-close').onclick = () => $('#settings').classList.remove('on');
   $('#settings').onclick = e => { if (e.target.id === 'settings') $('#settings').classList.remove('on'); };
@@ -1143,6 +1362,11 @@ function goHome() {
 function boot() {
   applyTheme();
   ensureMap();
+  if (Cloud.enabled) {
+    Cloud.loadSession();
+    if (Cloud.current()) cloudSyncIn();
+  }
+  updateAccountChip();
   if (!Store.persistent) {
     const n = $('#storage-note');
     n.classList.add('warn');
