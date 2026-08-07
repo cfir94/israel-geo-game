@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0a1622">
+<meta name="description" content="משחק אינטראקטיבי ללימוד הגיאוגרפיה של ארץ ישראל – לתלמידי ומורי דרך.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>מפת הארץ · משחק מורי הדרך</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🗺️%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ==================== מסך פתיחה ==================== -->
+  <section class="screen active" id="screen-home">
+    <div class="home-glow"></div>
+
+    <header class="home-head">
+      <div class="brand">
+        <div class="brand-mark">🗺️</div>
+        <div>
+          <h1>מפת הארץ</h1>
+          <p>משחק מורי הדרך</p>
+        </div>
+      </div>
+      <button class="icon-btn" id="btn-settings" aria-label="הגדרות">⚙️</button>
+    </header>
+
+    <div class="wallet">
+      <div class="wallet-item"><span class="wi-ico">🪙</span><span id="hud-coins">0</span></div>
+      <div class="wallet-item"><span class="wi-ico">⭐</span><span id="hud-stars" class="num-pair">0</span></div>
+      <div class="wallet-item"><span class="wi-ico">🎖️</span><span id="hud-rank">מתלמד</span></div>
+    </div>
+
+    <div class="xp-wrap">
+      <div class="xp-bar"><i id="xp-fill"></i></div>
+      <div class="xp-txt"><span id="xp-label">דרגה 1</span><span id="xp-next">0 / 500 נק׳</span></div>
+    </div>
+
+    <h2 class="sec-title">בחרו אתגר</h2>
+    <div class="modes" id="modes-grid"></div>
+
+    <div class="home-extra">
+      <button class="ghost-btn" id="btn-atlas">📖 אטלס האתרים</button>
+      <button class="ghost-btn" id="btn-daily">🔥 אתגר יומי</button>
+    </div>
+
+    <footer class="credit">נבנה עבור מורי דרך בישראל · <span id="site-count">0</span> אתרים · 13 אזורים</footer>
+  </section>
+
+  <!-- ==================== בחירת שלב ==================== -->
+  <section class="screen" id="screen-levels">
+    <header class="bar">
+      <button class="icon-btn" data-back="home">→</button>
+      <div class="bar-title"><span id="lv-mode-icon"></span><h2 id="lv-mode-name">מצב</h2></div>
+      <div class="bar-spacer"></div>
+    </header>
+    <p class="mode-desc" id="lv-mode-desc"></p>
+    <div class="diffs" id="diff-tabs"></div>
+    <div class="levels" id="levels-grid"></div>
+  </section>
+
+  <!-- ==================== משחק ==================== -->
+  <section class="screen" id="screen-play">
+    <header class="bar play-bar">
+      <button class="icon-btn" id="btn-quit">✕</button>
+      <div class="qdots" id="qdots"></div>
+      <div class="score-chip"><span id="play-score">0</span></div>
+    </header>
+
+    <div class="timer-wrap"><div class="timer-bar"><i id="timer-fill"></i></div></div>
+
+    <div class="prompt" id="prompt">
+      <span class="prompt-kicker" id="prompt-kicker"></span>
+      <h3 id="prompt-text">שאלה</h3>
+      <p class="prompt-sub" id="prompt-sub"></p>
+    </div>
+
+    <div class="map-shell" id="map-shell">
+      <div class="map-host" id="map-host"></div>
+      <div class="map-hud" id="map-hud"></div>
+      <div class="zoomer">
+        <button id="zoom-in" aria-label="התקרבות">+</button>
+        <button id="zoom-out" aria-label="התרחקות">−</button>
+        <button id="zoom-reset" class="reset" aria-label="תצוגה מלאה">⛶</button>
+      </div>
+      <div class="zoom-hint" id="zoom-hint">צביטה בשתי אצבעות מתקרבת · גרירה מזיזה</div>
+      <div class="acc-badge" id="acc-badge">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="acc-track" cx="60" cy="60" r="52"></circle>
+          <circle class="acc-fill" id="acc-fill" cx="60" cy="60" r="52"></circle>
+        </svg>
+        <div class="acc-num"><b id="acc-pct">0</b><span>%</span></div>
+        <em id="acc-word"></em>
+      </div>
+    </div>
+
+    <div class="dock" id="dock">
+      <div class="dock-pin" id="dock-pin" role="button" tabindex="0"
+           aria-label="גררו את הסיכה אל המפה">
+        <svg viewBox="0 0 32 44" aria-hidden="true">
+          <path d="M16 43C16 43 30 25.5 30 15A14 14 0 1 0 2 15c0 10.5 14 28 14 28z"/>
+          <circle cx="16" cy="15" r="5.4"/>
+        </svg>
+      </div>
+      <p class="dock-hint" id="dock-hint">גררו את הסיכה אל המקום הנכון במפה</p>
+      <button class="pill-btn primary confirm-btn" id="btn-confirm">אישור מיקום</button>
+    </div>
+
+    <div class="answers" id="answers"></div>
+
+    <div class="lifelines" id="lifelines">
+      <button class="ll" data-ll="fifty"><span>50:50</span><b id="cost-fifty">25</b></button>
+      <button class="ll" data-ll="hint"><span>💡 רמז</span><b id="cost-hint">30</b></button>
+      <button class="ll" data-ll="skip"><span>⏭️ דילוג</span><b id="cost-skip">40</b></button>
+    </div>
+
+    <div class="feedback" id="feedback"></div>
+  </section>
+
+  <!-- ==================== סיכום ==================== -->
+  <section class="screen" id="screen-result">
+    <div class="result-card">
+      <div class="stars-row" id="stars-row">
+        <span class="star">★</span><span class="star">★</span><span class="star">★</span>
+      </div>
+      <h2 id="res-title">כל הכבוד!</h2>
+      <p id="res-sub"></p>
+      <div class="res-stats">
+        <div><b id="res-score">0</b><span>נקודות</span></div>
+        <div><b id="res-correct">0</b><span>תשובות נכונות</span></div>
+        <div><b id="res-coins">0</b><span>מטבעות</span></div>
+      </div>
+      <div class="res-review" id="res-review"></div>
+      <div class="res-btns">
+        <button class="pill-btn ghost" id="res-again">שוב</button>
+        <button class="pill-btn primary" id="res-next">השלב הבא</button>
+      </div>
+      <button class="text-btn" data-back="home">חזרה לתפריט</button>
+    </div>
+  </section>
+
+  <!-- ==================== אטלס ==================== -->
+  <section class="screen" id="screen-atlas">
+    <header class="bar">
+      <button class="icon-btn" data-back="home">→</button>
+      <div class="bar-title"><span>📖</span><h2>אטלס האתרים</h2></div>
+      <div class="bar-spacer"></div>
+    </header>
+    <div class="map-shell atlas-map">
+      <div class="map-host" id="atlas-host"></div>
+    </div>
+    <div class="chips" id="atlas-chips"></div>
+    <div class="site-list" id="atlas-list"></div>
+  </section>
+
+  <!-- ==================== כרטיס אתר ==================== -->
+  <div class="sheet" id="sheet">
+    <div class="sheet-card">
+      <div class="sheet-grab"></div>
+      <div class="sheet-head">
+        <span class="sheet-ico" id="sheet-ico">🏛️</span>
+        <div>
+          <h3 id="sheet-name"></h3>
+          <p id="sheet-meta"></p>
+        </div>
+      </div>
+      <p class="sheet-fact" id="sheet-fact"></p>
+      <div class="sheet-tags" id="sheet-tags"></div>
+      <button class="pill-btn primary" id="sheet-close">סגירה</button>
+    </div>
+  </div>
+
+  <!-- ==================== הגדרות ==================== -->
+  <div class="sheet" id="settings">
+    <div class="sheet-card">
+      <div class="sheet-grab"></div>
+      <h3>הגדרות</h3>
+      <p class="set-label">ערכת נושא</p>
+      <div class="seg" id="theme-seg">
+        <button data-theme-opt="auto"><span>🌗</span>לפי המכשיר</button>
+        <button data-theme-opt="light"><span>☀️</span>בהיר</button>
+        <button data-theme-opt="dark"><span>🌙</span>כהה</button>
+      </div>
+      <label class="switch"><span>צלילים</span><input type="checkbox" id="opt-sound" checked></label>
+      <label class="switch"><span>רטט</span><input type="checkbox" id="opt-haptic" checked></label>
+      <label class="switch"><span>שמות אזורים על המפה</span><input type="checkbox" id="opt-labels" checked></label>
+      <label class="switch"><span>שאלות הדרכה אחרי כל מיקום</span><input type="checkbox" id="opt-guideq" checked></label>
+      <button class="pill-btn danger" id="btn-reset">איפוס התקדמות</button>
+      <button class="pill-btn ghost" id="settings-close">סגירה</button>
+      <p class="fineprint" id="storage-note">כל ההתקדמות נשמרת במכשיר שלכם בלבד.</p>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="js/geo.js"></script>
+<script src="js/data.js"></script>
+<script src="js/guide.js"></script>
+<script src="js/map.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>

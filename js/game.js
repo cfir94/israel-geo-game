@@ -1,0 +1,1163 @@
+/* =============================================================
+   מפת הארץ · משחק מורי הדרך – מנוע המשחק
+   ============================================================= */
+
+/* --------------------------------------------- כלי עזר ---- */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+function hashStr(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function shuffle(arr, rnd = Math.random) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+const pick = (arr, rnd) => arr[Math.floor(rnd() * arr.length)];
+
+/* --------------------------------------------- שמירה ----
+   נשמר ב-localStorage. אם הדפדפן חוסם אותו (גלישה פרטית, או
+   דף שמוטמע ב-iframe מוגבל), יורדים ל-sessionStorage ולבסוף
+   לזיכרון בלבד – והמשתמש מקבל על כך הודעה במסך ההגדרות.        */
+const KEY = 'israel-geo-game-v1';
+const DEFAULT_SAVE = {
+  coins: 120, xp: 0, stars: {}, best: {},
+  sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto',
+  daily: {}, seen: {}
+};
+
+const Store = (() => {
+  const probe = s => {
+    try {
+      if (!s) return false;
+      s.setItem('__t', '1'); s.removeItem('__t');
+      return true;
+    } catch (e) { return false; }
+  };
+  let backend = null, kind = 'memory';
+  try { if (probe(window.localStorage)) { backend = window.localStorage; kind = 'local'; } } catch (e) {}
+  if (!backend) { try { if (probe(window.sessionStorage)) { backend = window.sessionStorage; kind = 'session'; } } catch (e) {} }
+  let mem = null;
+  return {
+    kind,
+    persistent: kind === 'local',
+    get() {
+      try { return backend ? backend.getItem(KEY) : mem; } catch (e) { return mem; }
+    },
+    set(v) {
+      mem = v;
+      try { if (backend) backend.setItem(KEY, v); } catch (e) { /* מלא או חסום */ }
+    }
+  };
+})();
+
+let SAVE = load();
+
+function load() {
+  try {
+    const raw = Store.get();
+    if (!raw) return { ...DEFAULT_SAVE };
+    const d = JSON.parse(raw);
+    return { ...DEFAULT_SAVE, ...d, stars: d.stars || {}, best: d.best || {}, seen: d.seen || {} };
+  } catch (e) { return { ...DEFAULT_SAVE }; }
+}
+function persist() { Store.set(JSON.stringify(SAVE)); }
+
+/* שמירה נוספת ברגעים שבהם הדפדפן עלול להשליך את הדף */
+['pagehide', 'beforeunload'].forEach(ev => window.addEventListener(ev, persist));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') persist();
+});
+
+/* --------------------------------------------- ערכת נושא ---- */
+function applyTheme() {
+  const t = SAVE.theme || 'auto';
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  const dark = t === 'dark' ||
+    (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', dark ? '#0a1622' : '#eef2f7');
+  $$('#theme-seg button').forEach(b =>
+    b.classList.toggle('on', b.dataset.themeOpt === t));
+  if (typeof GameMap !== 'undefined' && GameMap.refreshTheme) {
+    try { GameMap.refreshTheme(); } catch (e) {}
+  }
+}
+
+/* --------------------------------------------- אודיו ---- */
+let actx = null;
+function beep(freq, dur = 0.09, type = 'sine', vol = 0.16) {
+  if (!SAVE.sound) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(); o.stop(actx.currentTime + dur);
+  } catch (e) { /* ignore */ }
+}
+const SFX = {
+  good() { beep(660, .08, 'triangle'); setTimeout(() => beep(990, .13, 'triangle'), 80); },
+  bad()  { beep(200, .18, 'sawtooth', .1); },
+  tap()  { beep(520, .04, 'sine', .07); },
+  win()  { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => beep(f, .16, 'triangle'), i * 105)); },
+  coin() { beep(880, .06, 'square', .08); setTimeout(() => beep(1320, .09, 'square', .07), 60); }
+};
+function buzz(ms) { if (SAVE.haptic && navigator.vibrate) try { navigator.vibrate(ms); } catch (e) {} }
+
+/* --------------------------------------------- מצבים ---- */
+const MODES = [
+  { id: 'locate', name: 'מקם על המפה', icon: '📍', color: '#2ee6c5', tag: 'שם אתר → הנקודה המדויקת',
+    desc: 'מקבלים שם של אתר – ולוחצים על המקום המדויק שלו במפה. ככל שקרוב יותר, כך מרוויחים יותר.' },
+  { id: 'identify', name: 'מה האתר הזה?', icon: '🔎', color: '#4aa8ff', tag: 'סיכה על המפה → מי זה',
+    desc: 'סיכה מהבהבת על המפה. זהו את האתר מבין ארבע אפשרויות – בדיוק כשהתייר שואל "מה רואים שם?".' },
+  { id: 'regionOf', name: 'לאיזה אזור שייך?', icon: '🧭', color: '#a78bfa', tag: 'אתר → חבל הארץ שלו',
+    desc: 'שם של אתר – ואתם לוחצים על חבל הארץ שבו הוא נמצא. הדרך הטובה להפנים את חלוקת הארץ.' },
+  { id: 'regionFind', name: 'אזורי הארץ', icon: '🗺️', color: '#ffce4d', tag: '13 חבלי ארץ על המפה',
+    desc: '13 חבלי ארץ, מהחרמון ועד אילת. מקבלים שם של אזור – ומזהים אותו על המפה.' },
+  { id: 'trivia', name: 'חידון מורה הדרך', icon: '🎓', color: '#ff6b81', tag: 'ידע, תקופות ואירועים',
+    desc: 'שאלות ידע על אתרים, תקופות ואירועים – בדיוק מה שנשאלים בשטח ובבחינות ההסמכה.' },
+  { id: 'unesco', name: 'מורשת עולמית', icon: '🏆', color: '#46e08a', tag: 'אתרי אונסק״ו בישראל',
+    desc: 'אתרי המורשת העולמית של אונסק״ו – 16 אתרים בשטח המרכיבים עשר הכרזות (כולל "התלים המקראיים" ו"דרך הבשמים"). לזהות, למקם ולדעת למה הם ברשימה.' }
+];
+MODES.push({ id: 'guide', name: 'סדנת הדרכה', icon: '🎤', color: '#f0abfc', tag: 'מה מספרים בכל אתר',
+  desc: 'שלוש שאלות על כל אתר: מה עושים שם, מה נקודת ההדרכה, ומה חשוב לדעת מהשטח.' });
+const MODE_BY_ID = Object.fromEntries(MODES.map(m => [m.id, m]));
+
+/* מצבים שמחולקים לרמות קושי לפי האתרים */
+const BY_DIFF = new Set(['locate', 'identify', 'regionOf', 'guide']);
+const DIFFS = [
+  { id: 1, name: 'קל',     sub: 'אתרי חובה' },
+  { id: 2, name: 'בינוני', sub: 'הרחבה' },
+  { id: 3, name: 'מתקדם',  sub: 'למורה ותיק' }
+];
+const diffKey = (mode, diff) => BY_DIFF.has(mode) ? mode + ':' + diff : mode;
+
+const RANKS = [
+  [0, 'מתלמד'], [400, 'מדריך מתחיל'], [1200, 'מורה דרך'],
+  [2600, 'מורה דרך בכיר'], [4800, 'מומחה הארץ'], [8000, 'אלוף המפה']
+];
+function rankOf(xp) {
+  let r = RANKS[0], nx = RANKS[1];
+  for (let i = 0; i < RANKS.length; i++) {
+    if (xp >= RANKS[i][0]) { r = RANKS[i]; nx = RANKS[i + 1] || null; }
+  }
+  return { name: r[1], base: r[0], next: nx ? nx[0] : r[0] + 1, lvl: RANKS.indexOf(r) + 1, max: !nx };
+}
+
+/* ------------------------------------ מאגר שאלות לפי מצב ---- */
+const POOL = SITES.slice().sort((a, b) =>
+  (a.lvl - b.lvl) || (hashStr(a.id) - hashStr(b.id)));
+
+function poolFor(diff) { return POOL.filter(s => s.lvl === diff); }
+
+/* כמה אתרים בכל שלב. כשמצב "שאלות הדרכה" פעיל, שלב מיקום מכיל
+   פחות אתרים – כי כל אתר גורר אחריו שלוש שאלות נוספות. */
+function sitesPerLevel(mode) {
+  if (mode === 'guide') return 3;
+  if (mode === 'locate' && SAVE.guideQ) return 4;
+  return GAME_CONFIG.questionsPerLevel;
+}
+
+function levelCount(mode, diff = 1) {
+  if (BY_DIFF.has(mode)) {
+    return Math.max(1, Math.min(12, Math.floor(poolFor(diff).length / sitesPerLevel(mode))));
+  }
+  switch (mode) {
+    case 'regionFind': return 8;
+    case 'trivia': return Math.floor(TRIVIA.length / GAME_CONFIG.questionsPerLevel);
+    case 'unesco': return 5;
+  }
+  return 8;
+}
+
+function sitesForLevel(level, diff, mode) {
+  const pool = BY_DIFF.has(mode) ? poolFor(diff) : POOL;
+  const n = sitesPerLevel(mode);
+  const start = (level - 1) * n;
+  let out = pool.slice(start, start + n);
+  if (out.length < n) out = out.concat(pool.slice(0, n - out.length));
+  return out;
+}
+
+/* ---------- אחוז הדיוק של מיקום על המפה ---------- */
+function accuracyPct(km) {
+  if (km <= 3) return 100;
+  const k = Math.min(1, (km - 3) / 180);
+  return Math.max(0, Math.round(100 * (1 - Math.pow(k, 0.6))));
+}
+function accuracyWord(p) {
+  if (p >= 92) return 'בול במקום';
+  if (p >= 80) return 'מדויק';
+  if (p >= 65) return 'קרוב מאוד';
+  if (p >= 45) return 'בערך שם';
+  if (p >= 25) return 'צריך לחדד';
+  return 'רחוק';
+}
+
+/* ---------- שאלת הדרכה כשאלת משחק ---------- */
+function guideQuestion(site, row, rnd) {
+  const [type, text, ans, w1, w2, w3, why] = row;
+  const t = GUIDE_TYPES[type];
+  return {
+    kind: 'choice', showMap: false, time: 22, site, guide: true, gType: type,
+    kicker: t.icon + ' ' + t.name,
+    text, sub: site.n,
+    options: shuffle([{ label: ans, correct: true }, { label: w1 }, { label: w2 }, { label: w3 }], rnd),
+    hint: { text: 'חשבו על מה שהקבוצה באמת רואה ועושה ב' + site.n },
+    explain: why || ans
+  };
+}
+function guideRowsFor(site) { return GUIDE_Q[site.id] || []; }
+
+function distractorSites(site, count, rnd) {
+  const same = SITES.filter(s => s.r === site.r && s.id !== site.id);
+  const near = SITES.filter(s => s.id !== site.id && s.r !== site.r)
+    .sort((a, b) => GameMap.haversine(site.lat, site.lon, a.lat, a.lon) -
+                    GameMap.haversine(site.lat, site.lon, b.lat, b.lon));
+  const bag = shuffle(same, rnd).concat(near.slice(0, 14));
+  const out = [];
+  for (const s of bag) { if (out.length >= count) break; if (!out.includes(s)) out.push(s); }
+  return out;
+}
+
+/* ---------- בניית שאלות ---------- */
+function buildQuestions(mode, level, diff = 1) {
+  const rnd = mulberry32(hashStr(mode + '#' + diff + '#' + level));
+  const n = GAME_CONFIG.questionsPerLevel;
+
+  if (mode === 'guide') {
+    const out = [];
+    sitesForLevel(level, diff, mode).forEach(s =>
+      guideRowsFor(s).forEach(row => out.push(guideQuestion(s, row, rnd))));
+    return out;
+  }
+
+  if (mode === 'locate') {
+    return sitesForLevel(level, diff, mode).map(s => ({
+      kind: 'mapPoint', showMap: true, site: s, time: 25,
+      kicker: 'מקמו על המפה',
+      text: s.n,
+      sub: CATEGORIES[s.c].icon + ' ' + CATEGORIES[s.c].name,
+      target: { lat: s.lat, lon: s.lon },
+      hint: { text: 'האזור: ' + REGION_BY_ID[s.r].name, region: s.r },
+      explain: s.f
+    }));
+  }
+
+  if (mode === 'identify') {
+    return sitesForLevel(level, diff, mode).map(s => {
+      const wrong = distractorSites(s, 3, rnd);
+      return {
+        kind: 'choice', showMap: true, mapMode: 'pinRegion', site: s, time: 20,
+        kicker: 'זיהוי אתר',
+        text: 'איזה אתר מסומן בסיכה?',
+        sub: '',
+        options: shuffle([{ label: s.n, correct: true }, ...wrong.map(w => ({ label: w.n }))], rnd),
+        hint: { text: 'האתר נמצא ב' + REGION_BY_ID[s.r].name },
+        explain: s.f
+      };
+    });
+  }
+
+  if (mode === 'regionOf') {
+    return sitesForLevel(level, diff, mode).map(s => {
+      const buddy = SITES.filter(x => x.r === s.r && x.id !== s.id && x.lvl === 1)[0] ||
+                    SITES.filter(x => x.r === s.r && x.id !== s.id)[0];
+      return {
+        kind: 'mapRegion', showMap: true, mapMode: 'regions', site: s, time: 20,
+        kicker: 'לאיזה חבל ארץ שייך?',
+        text: s.n,
+        sub: 'לחצו על האזור הנכון במפה',
+        targetRegion: s.r,
+        hint: buddy ? { text: 'באותו אזור נמצא גם: ' + buddy.n, pin: buddy } : { text: REGION_BY_ID[s.r].desc },
+        explain: s.n + ' – ' + REGION_BY_ID[s.r].name + '. ' + s.f
+      };
+    });
+  }
+
+  if (mode === 'regionFind') {
+    const order = shuffle(REGIONS, rnd).slice(0, n);
+    return order.map(rg => ({
+      kind: 'mapRegion', showMap: true, mapMode: 'regionsBlank', time: 20,
+      kicker: 'איפה האזור הזה?',
+      text: rg.name,
+      sub: 'לחצו על האזור במפה',
+      targetRegion: rg.id,
+      hint: { text: rg.desc },
+      explain: rg.name + ' – ' + rg.desc
+    }));
+  }
+
+  if (mode === 'trivia') {
+    const start = (level - 1) * n;
+    const bank = TRIVIA.slice(start, start + n);
+    return bank.map(t => ({
+      kind: 'choice', showMap: false, time: 22,
+      kicker: 'חידון מורה הדרך',
+      text: t.q, sub: '',
+      options: shuffle([{ label: t.a, correct: true }, ...t.w.map(w => ({ label: w }))], rnd),
+      site: t.site ? SITE_BY_ID[t.site] : null,
+      hint: t.site ? { text: 'קשור לאתר באזור ' + REGION_BY_ID[SITE_BY_ID[t.site].r].name } : { text: 'חשבו על ההקשר ההיסטורי' },
+      explain: t.site && SITE_BY_ID[t.site] ? SITE_BY_ID[t.site].n + ': ' + SITE_BY_ID[t.site].f : t.a
+    }));
+  }
+
+  if (mode === 'unesco') {
+    const qs = [];
+    const nonU = SITES.filter(s => !s.u);
+    UNESCO_SITES.forEach(s => {
+      qs.push({
+        kind: 'choice', showMap: false, time: 20, site: s,
+        kicker: 'מורשת עולמית', text: 'איזה מהאתרים הוא אתר מורשת עולמית של אונסק״ו?', sub: '',
+        options: shuffle([{ label: s.n, correct: true },
+          ...shuffle(nonU, rnd).slice(0, 3).map(x => ({ label: x.n }))], rnd),
+        hint: { text: 'האתר נמצא ב' + REGION_BY_ID[s.r].name },
+        explain: s.n + ': ' + s.f
+      });
+      qs.push({
+        kind: 'mapPoint', showMap: true, time: 25, site: s,
+        kicker: 'מורשת עולמית · מיקום', text: s.n, sub: '🏆 אתר מורשת עולמית',
+        target: { lat: s.lat, lon: s.lon },
+        hint: { text: 'האזור: ' + REGION_BY_ID[s.r].name, region: s.r },
+        explain: s.f
+      });
+      qs.push({
+        kind: 'mapRegion', showMap: true, mapMode: 'regions', time: 20, site: s,
+        kicker: 'מורשת עולמית · אזור', text: s.n, sub: 'באיזה חבל ארץ?',
+        targetRegion: s.r,
+        hint: { text: REGION_BY_ID[s.r].desc },
+        explain: s.n + ' – ' + REGION_BY_ID[s.r].name
+      });
+    });
+    const all = shuffle(qs, mulberry32(hashStr('unesco-all')));
+    const start = (level - 1) * n;
+    let out = all.slice(start, start + n);
+    if (out.length < n) out = out.concat(all.slice(0, n - out.length));
+    return out;
+  }
+  return [];
+}
+
+/* מאגר מעורב לאתגר היומי */
+function buildDaily() {
+  const key = new Date().toISOString().slice(0, 10);
+  const rnd = mulberry32(hashStr('daily-' + key));
+  const all = [];
+  ['identify', 'regionOf', 'trivia', 'guide'].forEach(m => {
+    DIFFS.forEach(d => {
+      for (let l = 1; l <= levelCount(m, d.id); l++) all.push(...buildQuestions(m, l, d.id));
+    });
+  });
+  return { key, qs: shuffle(all, rnd).slice(0, 10) };
+}
+
+/* --------------------------------------------- מפה ---- */
+let mapWrap = null;
+function ensureMap() {
+  if (mapWrap) return;
+  mapWrap = document.createElement('div');
+  mapWrap.style.cssText = 'position:absolute;inset:0';
+  GameMap.init(mapWrap);
+}
+function mountMap(hostId) {
+  ensureMap();
+  const host = document.getElementById(hostId);
+  if (mapWrap.parentNode !== host) host.appendChild(mapWrap);
+}
+
+/* --------------------------------------------- מסכים ---- */
+let currentScreen = 'home';
+function show(id) {
+  $$('.screen').forEach(s => s.classList.remove('active'));
+  $('#screen-' + id).classList.add('active');
+  $('#screen-' + id).scrollTop = 0;
+  currentScreen = id;
+}
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('on'), 1900);
+}
+
+/* --------------------------------------------- HUD ---- */
+function totalStarsMax() {
+  return MODES.reduce((a, m) => a + (BY_DIFF.has(m.id)
+    ? DIFFS.reduce((b, d) => b + levelCount(m.id, d.id), 0)
+    : levelCount(m.id)) * 3, 0);
+}
+function totalStars() {
+  let s = 0;
+  for (const m in SAVE.stars) for (const l in SAVE.stars[m]) s += SAVE.stars[m][l];
+  return s;
+}
+function renderHUD() {
+  $('#hud-coins').textContent = SAVE.coins;
+  $('#hud-stars').textContent = totalStars() + '/' + totalStarsMax();
+  const r = rankOf(SAVE.xp);
+  $('#hud-rank').textContent = r.name;
+  $('#xp-label').textContent = 'דרגה ' + r.lvl + ' · ' + r.name;
+  if (r.max) {
+    $('#xp-next').textContent = SAVE.xp + ' נק׳';
+    $('#xp-fill').style.width = '100%';
+  } else {
+    $('#xp-next').textContent = SAVE.xp + ' / ' + r.next + ' נק׳';
+    $('#xp-fill').style.width = Math.min(100, ((SAVE.xp - r.base) / (r.next - r.base)) * 100) + '%';
+  }
+  $('#cost-fifty').textContent = GAME_CONFIG.fiftyCost;
+  $('#cost-hint').textContent = GAME_CONFIG.hintCost;
+  $('#cost-skip').textContent = GAME_CONFIG.skipCost;
+}
+
+function renderModes() {
+  const g = $('#modes-grid');
+  g.innerHTML = '';
+  MODES.forEach(m => {
+    const total = BY_DIFF.has(m.id)
+      ? DIFFS.reduce((b, d) => b + levelCount(m.id, d.id), 0)
+      : levelCount(m.id);
+    const got = (BY_DIFF.has(m.id) ? DIFFS.map(d => diffKey(m.id, d.id)) : [m.id])
+      .reduce((a, k) => a + Object.values(SAVE.stars[k] || {}).reduce((x, y) => x + y, 0), 0);
+    const b = document.createElement('button');
+    b.className = 'mode-card';
+    b.style.setProperty('--mc', m.color);
+    b.innerHTML = `
+      <div class="mode-ico">${m.icon}</div>
+      <h3>${m.name}</h3>
+      <p>${m.tag}</p>
+      <div class="mode-prog">
+        <span>★ ${got}/${total * 3}</span>
+        <span class="bar"><i style="width:${(got / (total * 3)) * 100}%"></i></span>
+      </div>`;
+    b.onclick = () => { SFX.tap(); openLevels(m.id); };
+    g.appendChild(b);
+  });
+  $('#site-count').textContent = SITES.length;
+}
+
+/* --------------------------------------------- שלבים ---- */
+let curMode = null, curDiff = 1;
+function openLevels(mode, diff) {
+  curMode = mode;
+  if (diff) curDiff = diff;
+  const m = MODE_BY_ID[mode];
+  $('#lv-mode-icon').textContent = m.icon;
+  $('#lv-mode-name').textContent = m.name;
+  $('#lv-mode-desc').textContent = m.desc;
+
+  const tabs = $('#diff-tabs');
+  tabs.innerHTML = '';
+  if (BY_DIFF.has(mode)) {
+    DIFFS.forEach(d => {
+      const b = document.createElement('button');
+      b.className = 'diff-tab' + (curDiff === d.id ? ' on' : '');
+      b.innerHTML = `${d.name}<small>${poolFor(d.id).length} אתרים · ${d.sub}</small>`;
+      b.onclick = () => { SFX.tap(); openLevels(mode, d.id); };
+      tabs.appendChild(b);
+    });
+  }
+
+  const g = $('#levels-grid');
+  g.innerHTML = '';
+  const total = levelCount(mode, curDiff);
+  const stars = SAVE.stars[diffKey(mode, curDiff)] || {};
+  for (let i = 1; i <= total; i++) {
+    const got = stars[i] || 0;
+    const unlocked = i === 1 || (stars[i - 1] || 0) > 0;
+    const b = document.createElement('button');
+    b.className = 'level-btn' + (unlocked ? (got ? ' done' : '') : ' locked');
+    b.innerHTML = unlocked
+      ? `<span class="num">${i}</span><span class="st">${'★'.repeat(got).replace(/★/g, '<b>★</b>')}${'☆'.repeat(3 - got)}</span>`
+      : `<span class="num">🔒</span><span class="st">נעול</span>`;
+    b.onclick = () => {
+      if (!unlocked) { SFX.bad(); toast('סיימו את השלב הקודם כדי לפתוח'); return; }
+      SFX.tap(); startGame(mode, i, { diff: curDiff });
+    };
+    g.appendChild(b);
+  }
+  show('levels');
+}
+
+/* --------------------------------------------- משחק ---- */
+let G = null;
+
+function startGame(mode, level, opts = {}) {
+  clearTimeout(nextTimer);
+  const diff = opts.diff || curDiff;
+  const qs = opts.daily ? opts.qs : buildQuestions(mode, level, diff);
+  G = {
+    mode, level, diff, qs, idx: 0, score: 0, correct: 0,
+    answered: false, results: [], daily: !!opts.daily,
+    used: { fifty: false, hint: false }
+  };
+  $('#play-score').textContent = '0';
+  $('#lifelines').style.display = opts.daily ? 'none' : 'flex';
+  show('play');
+  renderQuestion();
+}
+
+/* נקודות ההתקדמות נבנות מחדש, כי שאלות הדרכה מתווספות תוך כדי */
+function renderDots() {
+  const dots = $('#qdots');
+  dots.innerHTML = G.qs.map((q, i) => {
+    const r = G.results[i];
+    const cls = r ? (r.ok ? 'ok' : 'bad') : (i === G.idx ? 'now' : '');
+    return `<i class="${cls}${q.guide ? ' small' : ''}"></i>`;
+  }).join('');
+}
+
+let timerRAF = null, timerEnd = 0;
+function startTimer(sec) {
+  stopTimer();
+  const fill = $('#timer-fill');
+  fill.classList.remove('warn');
+  timerEnd = performance.now() + sec * 1000;
+  const step = () => {
+    const left = timerEnd - performance.now();
+    const k = Math.max(0, left / (sec * 1000));
+    fill.style.transform = `scaleX(${k})`;
+    if (k < 0.3) fill.classList.add('warn');
+    if (left <= 0) { timeUp(); return; }
+    timerRAF = requestAnimationFrame(step);
+  };
+  timerRAF = requestAnimationFrame(step);
+}
+function stopTimer() { if (timerRAF) cancelAnimationFrame(timerRAF); timerRAF = null; }
+function timeLeftRatio(sec) { return Math.max(0, (timerEnd - performance.now()) / (sec * 1000)); }
+
+function renderQuestion() {
+  const q = G.qs[G.idx];
+  G.answered = false;
+  G.hintUsed = false;
+
+  renderDots();
+  resetPlacement();
+
+  $('#prompt-kicker').textContent = q.kicker;
+  $('#prompt-text').textContent = q.text;
+  $('#prompt-sub').textContent = q.sub || '';
+  $('#feedback').className = 'feedback';
+  $('#feedback').innerHTML = '';
+  $('#map-hud').innerHTML = '';
+
+  $$('.ll').forEach(b => {
+    b.classList.remove('used');
+    b.disabled = false;
+  });
+  if (q.kind !== 'choice') { const f = $('[data-ll="fifty"]'); f.disabled = true; f.classList.add('used'); }
+
+  const shell = $('#map-shell');
+  const ans = $('#answers');
+  ans.innerHTML = '';
+
+  if (q.showMap) {
+    shell.classList.add('on');
+    mountMap('map-host');
+    GameMap.clearPins();
+    GameMap.resetRegionStates();
+
+    if (q.mapMode === 'pinRegion') {
+      GameMap.showRegions(true, .3);
+      GameMap.fitAround(q.site.lat, q.site.lon, 0.95, false);
+      GameMap.showRegionLabels(true);
+      GameMap.pin({ lat: q.site.lat, lon: q.site.lon, type: 'target', pulse: true });
+      GameMap.setTap(null);
+    } else if (q.mapMode === 'regions' || q.mapMode === 'regionsBlank') {
+      GameMap.showRegions(true, .5);
+      GameMap.showRegionLabels(false);
+      GameMap.fitAll(false);
+      GameMap.setTap(ll => onMapTapRegion(ll));
+    } else {
+      /* mapPoint – מציבים סיכה בגרירה או בלחיצה, ואז מאשרים */
+      GameMap.showRegions(true, .2);
+      GameMap.showRegionLabels(!!SAVE.labels);
+      GameMap.fitAll(false);
+      GameMap.setTap(ll => placePin(ll));
+      $('#dock').classList.add('on');
+      showZoomHint();
+    }
+  } else {
+    shell.classList.remove('on');
+    GameMap.setTap(null);
+  }
+  if (q.guide) {
+    $('#prompt-kicker').style.color = GUIDE_TYPES[q.gType].color;
+  } else {
+    $('#prompt-kicker').style.color = '';
+  }
+
+  if (q.kind === 'choice') {
+    q.options.forEach(o => {
+      const b = document.createElement('button');
+      b.className = 'ans';
+      b.textContent = o.label;
+      b.onclick = () => answerChoice(b, o);
+      ans.appendChild(b);
+    });
+  }
+
+  startTimer(q.time || 20);
+}
+
+/* ---------- תשובות ---------- */
+function gradeStars(scorePct) {
+  if (scorePct >= 0.9) return 3;
+  if (scorePct >= 0.7) return 2;
+  if (scorePct >= 0.45) return 1;
+  return 0;
+}
+
+function award(q, pts, ok, note) {
+  if (G.answered) return;
+  G.answered = true;
+  stopTimer();
+  GameMap.setTap(null);
+
+  const bonus = ok ? Math.round(pts * 0.25 * timeLeftRatio(q.time || 20)) : 0;
+  const total = pts + bonus;
+  G.score += total;
+  if (ok) G.correct++;
+  $('#play-score').textContent = G.score;
+
+  G.results[G.idx] = { q, ok, note, pts: total };
+  renderDots();
+
+  if (ok) { SFX.good(); buzz(24); } else { SFX.bad(); buzz([28, 60, 28]); }
+
+  if (q.site) SAVE.seen[q.site.id] = (SAVE.seen[q.site.id] || 0) + 1;
+
+  const fb = $('#feedback');
+  fb.className = 'feedback on ' + (ok ? 'good' : 'bad');
+  fb.innerHTML = `<span class="go">המשך ←</span>
+                  <b>${ok ? '✔ ' + (note || 'נכון!') : '✘ ' + (note || 'לא מדויק')}</b>
+                  <span>${q.explain || ''}</span>`;
+
+  maybeInjectGuide(q);
+  scheduleNext(ok ? 2000 : 3400);
+}
+
+/* אחרי מיקום על המפה – שלוש שאלות הדרכה על אותו אתר */
+function maybeInjectGuide(q) {
+  if (!SAVE.guideQ || G.daily) return;
+  if (q.kind !== 'mapPoint' || q.guide || q.guideDone) return;
+  const site = q.site;
+  if (!site) return;
+  const rows = guideRowsFor(site);
+  if (!rows.length) return;
+  q.guideDone = true;
+  const rnd = mulberry32(hashStr('gq' + site.id + G.level));
+  const added = rows.map(r => guideQuestion(site, r, rnd));
+  G.qs.splice(G.idx + 1, 0, ...added);
+  renderDots();
+}
+
+/* מעבר אוטומטי לשאלה הבאה, או מיידית בלחיצה על המשוב */
+let nextTimer = null;
+function scheduleNext(ms) {
+  clearTimeout(nextTimer);
+  nextTimer = setTimeout(nextQuestion, ms);
+}
+function advanceNow() {
+  if (!G || !G.answered) return;
+  clearTimeout(nextTimer);
+  nextQuestion();
+}
+
+function answerChoice(btn, opt) {
+  if (G.answered) return;
+  const q = G.qs[G.idx];
+  const all = $$('#answers .ans');
+  all.forEach(b => b.disabled = true);
+  if (opt.correct) {
+    btn.classList.add('correct');
+    award(q, 100, true, 'נכון!');
+  } else {
+    btn.classList.add('wrong');
+    all.forEach((b, i) => { if (q.options[i].correct) b.classList.add('correct'); });
+    const right = q.options.find(o => o.correct).label;
+    award(q, 0, false, 'התשובה: ' + right);
+  }
+}
+
+/* --------- הצבת הסיכה, אישור, ואחוזי דיוק --------- */
+let placedLL = null;
+
+function resetPlacement() {
+  placedLL = null;
+  $('#dock').classList.remove('on');
+  $('#dock-pin').classList.remove('placed');
+  $('#btn-confirm').classList.remove('on');
+  $('#dock-hint').textContent = 'גררו את הסיכה אל המקום הנכון במפה';
+  const b = $('#acc-badge');
+  b.className = 'acc-badge';
+  $('#acc-fill').style.strokeDashoffset = 327;
+  $('#acc-pct').textContent = '0';
+  $('#acc-word').textContent = '';
+}
+
+function placePin(ll) {
+  if (!G || G.answered) return;
+  const q = G.qs[G.idx];
+  if (q.kind !== 'mapPoint') return;
+  if (!GameMap.onLand(ll.lon, ll.lat) && !placedLL) {
+    /* מותר להניח גם בים, אבל נרמז שזה כנראה לא הכוונה */
+    $('#dock-hint').textContent = 'הנחתם מחוץ ליבשה – אפשר לגרור שוב';
+  } else {
+    $('#dock-hint').textContent = 'אפשר לגרור שוב כדי לדייק, או לאשר';
+  }
+  placedLL = { lat: ll.lat, lon: ll.lon };
+  GameMap.clearPins();
+  GameMap.pin({ lat: ll.lat, lon: ll.lon, type: 'answer', pulse: true });
+  $('#dock-pin').classList.add('placed');
+  $('#btn-confirm').classList.add('on');
+  SFX.tap(); buzz(12);
+}
+
+function showAccuracy(pct) {
+  const b = $('#acc-badge');
+  b.className = 'acc-badge on' + (pct >= 65 ? '' : pct >= 35 ? ' mid' : ' low');
+  $('#acc-word').textContent = accuracyWord(pct);
+  const t0 = performance.now();
+  const step = now => {
+    const k = Math.min(1, (now - t0) / 900);
+    $('#acc-pct').textContent = Math.round(pct * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  requestAnimationFrame(() => {
+    $('#acc-fill').style.strokeDashoffset = 327 * (1 - pct / 100);
+  });
+}
+
+function confirmPlacement() {
+  if (!G || G.answered || !placedLL) return;
+  const q = G.qs[G.idx];
+  const ll = placedLL;
+  const d = GameMap.haversine(ll.lat, ll.lon, q.target.lat, q.target.lon);
+  const pct = accuracyPct(d);
+
+  GameMap.clearPins();
+  GameMap.pin({ lat: ll.lat, lon: ll.lon, type: 'answer' });
+  GameMap.pin({ lat: q.target.lat, lon: q.target.lon, type: 'correct', label: q.site ? q.site.n : '' });
+  GameMap.line(ll, { lat: q.target.lat, lon: q.target.lon });
+  showAccuracy(pct);
+
+  $('#dock').classList.remove('on');
+  $('#map-hud').innerHTML = `<span class="tag">${Math.round(d)} ק״מ מהיעד</span>`;
+  award(q, pct, pct >= 70, accuracyWord(pct) + ' · ' + pct + '% דיוק');
+}
+
+function onMapTapRegion(ll) {
+  if (G.answered) return;
+  const q = G.qs[G.idx];
+  const hit = GameMap.regionAt(ll.lon, ll.lat);
+  if (!hit) { toast('לחצו בתוך שטח המפה'); return; }
+  const ok = hit === q.targetRegion;
+  GameMap.setRegionState(q.targetRegion, 'correct');
+  if (!ok) GameMap.setRegionState(hit, 'wrong');
+  if (q.site) GameMap.pin({ lat: q.site.lat, lon: q.site.lon, type: 'correct', label: q.site.n });
+  $('#map-hud').innerHTML = `<span class="tag">${REGION_BY_ID[q.targetRegion].name}</span>`;
+  award(q, ok ? 100 : 0, ok, ok ? 'נכון!' : 'זה ' + REGION_BY_ID[hit].name + ', והתשובה: ' + REGION_BY_ID[q.targetRegion].name);
+}
+
+function timeUp() {
+  const q = G.qs[G.idx];
+  if (G.answered) return;
+  if (q.kind === 'choice') {
+    $$('#answers .ans').forEach((b, i) => {
+      b.disabled = true;
+      if (q.options[i].correct) b.classList.add('correct');
+    });
+    award(q, 0, false, 'נגמר הזמן! התשובה: ' + q.options.find(o => o.correct).label);
+  } else if (q.kind === 'mapPoint') {
+    if (placedLL) return confirmPlacement();
+    GameMap.pin({ lat: q.target.lat, lon: q.target.lon, type: 'correct', label: q.site ? q.site.n : '' });
+    $('#dock').classList.remove('on');
+    award(q, 0, false, 'נגמר הזמן – לא הונחה סיכה');
+  } else {
+    GameMap.setRegionState(q.targetRegion, 'correct');
+    award(q, 0, false, 'נגמר הזמן! ' + REGION_BY_ID[q.targetRegion].name);
+  }
+}
+
+function nextQuestion() {
+  clearTimeout(nextTimer);
+  G.idx++;
+  if (G.idx >= G.qs.length) finishGame();
+  else renderQuestion();
+}
+
+/* ---------- קווי חיים ---------- */
+function useLifeline(type) {
+  if (!G || G.answered) return;
+  const q = G.qs[G.idx];
+  const cost = { fifty: GAME_CONFIG.fiftyCost, hint: GAME_CONFIG.hintCost, skip: GAME_CONFIG.skipCost }[type];
+  if (SAVE.coins < cost) { SFX.bad(); toast('אין מספיק מטבעות'); return; }
+
+  if (type === 'fifty') {
+    if (q.kind !== 'choice') return;
+    const btns = $$('#answers .ans');
+    const wrongIdx = q.options.map((o, i) => o.correct ? -1 : i).filter(i => i >= 0);
+    shuffle(wrongIdx).slice(0, 2).forEach(i => btns[i].classList.add('dim'));
+  } else if (type === 'hint') {
+    const h = q.hint || { text: 'אין רמז' };
+    $('#map-hud').innerHTML = `<span class="tag">💡 ${h.text}</span>`;
+    if (!q.showMap) {
+      const fb = $('#feedback');
+      fb.className = 'feedback on';
+      fb.innerHTML = `<b>💡 רמז</b><span>${h.text}</span>`;
+    }
+    if (h.region) GameMap.setRegionState(h.region, 'correct');
+    if (h.pin) GameMap.pin({ lat: h.pin.lat, lon: h.pin.lon, type: 'atlas', label: h.pin.n });
+  } else if (type === 'skip') {
+    stopTimer();
+    G.answered = true;
+    G.results[G.idx] = { q, ok: false, note: 'דילוג', pts: 0, skipped: true };
+    renderDots();
+    scheduleNext(250);
+  }
+
+  SAVE.coins -= cost; persist(); renderHUD(); SFX.coin();
+  const b = $(`[data-ll="${type}"]`);
+  if (type !== 'skip') { b.classList.add('used'); b.disabled = true; }
+}
+
+/* ---------- סיום ---------- */
+function finishGame() {
+  stopTimer();
+  const maxScore = G.qs.length * 125;
+  const misses0 = G.results.filter(r => r && !r.ok).length;
+  const pct = G.score / maxScore;
+  const stars = G.daily ? 0 : gradeStars(G.correct / G.qs.length);
+
+  let coins = G.correct * GAME_CONFIG.coinsCorrect;
+  if (!G.daily && G.correct === G.qs.length) coins += GAME_CONFIG.coinsPerfect;
+  SAVE.coins += coins;
+  SAVE.xp += G.score;
+
+  if (G.daily) {
+    SAVE.daily = { key: G.dailyKey, score: G.score, correct: G.correct };
+  } else {
+    const key = diffKey(G.mode, G.diff);
+    SAVE.stars[key] = SAVE.stars[key] || {};
+    SAVE.stars[key][G.level] = Math.max(SAVE.stars[key][G.level] || 0, stars);
+    SAVE.best[key + ':' + G.level] = Math.max(SAVE.best[key + ':' + G.level] || 0, G.score);
+  }
+  persist();
+
+  const sr = $('#stars-row');
+  sr.style.display = G.daily ? 'none' : 'flex';
+  $$('#stars-row .star').forEach((s, i) => {
+    s.classList.remove('on');
+    if (i < stars) setTimeout(() => { s.classList.add('on'); SFX.coin(); }, 380 + i * 300);
+  });
+
+  const titles = ['נמשיך להתאמן', 'לא רע בכלל!', 'יפה מאוד!', 'מושלם! 🎉'];
+  $('#res-title').textContent = G.daily
+    ? (G.correct >= 8 ? 'אתגר יומי – מצוין!' : 'אתגר יומי הושלם')
+    : titles[stars];
+  $('#res-sub').textContent = G.daily
+    ? 'חזרו מחר לאתגר חדש'
+    : MODE_BY_ID[G.mode].name + ' · ' +
+      (BY_DIFF.has(G.mode) ? DIFFS[G.diff - 1].name + ' · ' : '') + 'שלב ' + G.level;
+  $('#res-score').textContent = G.score;
+  $('#res-correct').textContent = G.correct + '/' + G.qs.length;
+  $('#res-coins').textContent = '+' + coins;
+
+  const rv = $('#res-review');
+  const misses = G.results.filter(r => r && !r.ok);
+  rv.innerHTML = misses.length
+    ? '<div class="sec-title" style="margin:6px 0 10px">כדאי לחזור על:</div>' + misses.map(r => `
+        <div class="rv"><span class="mk">${r.q.site ? CATEGORIES[r.q.site.c].icon : '📌'}</span>
+        <div><b>${r.q.site ? r.q.site.n : r.q.text}</b><p>${(r.q.explain || '').slice(0, 150)}</p></div></div>`).join('')
+    : '<div class="rv"><span class="mk">🏅</span><div><b>ללא טעויות</b><p>סיבוב מושלם – אתם מוכנים לשטח.</p></div></div>';
+
+  const hasNext = !G.daily && G.level < levelCount(G.mode, G.diff) && stars > 0;
+  $('#res-next').style.display = hasNext ? 'block' : 'none';
+  $('#res-again').textContent = G.daily ? 'לתפריט' : 'שוב';
+
+  if (stars === 3 || (G.daily && G.correct >= 8)) { SFX.win(); confetti(); }
+  else if (stars > 0) SFX.coin();
+
+  renderHUD();
+  show('result');
+}
+
+function confetti() {
+  const box = document.createElement('div');
+  box.className = 'confetti';
+  const colors = ['#2ee6c5', '#ffce4d', '#4aa8ff', '#ff6b81', '#a78bfa', '#46e08a'];
+  for (let i = 0; i < 70; i++) {
+    const s = document.createElement('i');
+    s.style.left = Math.random() * 100 + '%';
+    s.style.top = '-20px';
+    s.style.background = colors[i % colors.length];
+    s.style.animationDuration = (1.6 + Math.random() * 1.6) + 's';
+    s.style.animationDelay = (Math.random() * .5) + 's';
+    s.style.transform = `rotate(${Math.random() * 360}deg)`;
+    box.appendChild(s);
+  }
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 3800);
+}
+
+/* --------------------------------------------- אטלס ---- */
+let atlasFilter = 'all';
+function openAtlas() {
+  show('atlas');
+  mountMap('atlas-host');
+  GameMap.showRegions(true, .35);
+  GameMap.showRegionLabels(true);
+  GameMap.fitAll(false);
+  GameMap.setTap(null);
+  renderAtlasChips();
+  renderAtlasList();
+}
+function renderAtlasChips() {
+  const c = $('#atlas-chips');
+  c.innerHTML = '';
+  const mk = (id, label) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (atlasFilter === id ? ' on' : '');
+    b.textContent = label;
+    b.onclick = () => { atlasFilter = id; SFX.tap(); renderAtlasChips(); renderAtlasList(); };
+    c.appendChild(b);
+  };
+  mk('all', 'הכול (' + SITES.length + ')');
+  mk('unesco', '🏆 מורשת עולמית');
+  REGIONS.forEach(r => mk(r.id, r.short));
+}
+function renderAtlasList() {
+  const list = $('#atlas-list');
+  let arr = SITES;
+  if (atlasFilter === 'unesco') arr = UNESCO_SITES;
+  else if (atlasFilter !== 'all') arr = SITES.filter(s => s.r === atlasFilter);
+
+  GameMap.clearPins();
+  GameMap.resetRegionStates();
+  if (atlasFilter !== 'all' && atlasFilter !== 'unesco') {
+    GameMap.setRegionState(atlasFilter, 'correct');
+    GameMap.fitRegion(atlasFilter, true);
+  } else {
+    GameMap.fitAll(true);
+  }
+  arr.forEach(s => GameMap.pin({ lat: s.lat, lon: s.lon, type: 'atlas' }));
+
+  list.innerHTML = '';
+  arr.forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'site-row';
+    b.innerHTML = `<span class="ico">${CATEGORIES[s.c].icon}</span>
+      <span><b>${s.n}</b><small>${REGION_BY_ID[s.r].name}</small></span>
+      ${s.u ? '<span class="u">🏆</span>' : ''}`;
+    b.onclick = () => openSheet(s);
+    list.appendChild(b);
+  });
+}
+
+function openSheet(s) {
+  SFX.tap();
+  $('#sheet-ico').textContent = CATEGORIES[s.c].icon;
+  $('#sheet-name').textContent = s.n;
+  $('#sheet-meta').textContent = REGION_BY_ID[s.r].name + ' · ' + CATEGORIES[s.c].name;
+  $('#sheet-fact').textContent = s.f;
+  const tags = [];
+  if (s.u) tags.push('🏆 מורשת עולמית');
+  tags.push('דרגה ' + s.lvl);
+  tags.push(s.lat.toFixed(3) + '°N, ' + s.lon.toFixed(3) + '°E');
+  if (SAVE.seen[s.id]) tags.push('נשאלתם ' + SAVE.seen[s.id] + ' פעמים');
+  $('#sheet-tags').innerHTML = tags.map(t => `<span class="tag-s">${t}</span>`).join('');
+  $('#sheet').classList.add('on');
+
+  if (currentScreen === 'atlas') {
+    GameMap.clearPins();
+    GameMap.pin({ lat: s.lat, lon: s.lon, type: 'target', pulse: true, label: s.n });
+    GameMap.fitBounds([{ lat: s.lat - .35, lon: s.lon - .35 }, { lat: s.lat + .35, lon: s.lon + .35 }], .05, true);
+  }
+}
+
+let zoomHintShown = false;
+function showZoomHint() {
+  if (zoomHintShown) return;
+  zoomHintShown = true;
+  const h = $('#zoom-hint');
+  h.classList.add('on');
+  setTimeout(() => h.classList.remove('on'), 4200);
+}
+
+/* ------------------------------------------ גרירת סיכה ---- */
+let drag = null;
+
+function initDragPin() {
+  const pin = $('#dock-pin');
+  pin.addEventListener('pointerdown', startDrag);
+  pin.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    const q = G && G.qs[G.idx];
+    if (q && q.kind === 'mapPoint') {
+      toast('אפשר גם ללחוץ ישירות על המפה כדי להניח את הסיכה');
+    }
+  });
+}
+
+function startDrag(e) {
+  if (!G || G.answered) return;
+  const q = G.qs[G.idx];
+  if (!q || q.kind !== 'mapPoint') return;
+  e.preventDefault();
+  const ghost = document.createElement('div');
+  ghost.className = 'drag-ghost';
+  ghost.innerHTML = $('#dock-pin').innerHTML;
+  document.body.appendChild(ghost);
+  drag = { ghost };
+  moveDrag(e);
+  window.addEventListener('pointermove', moveDrag, { passive: false });
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+}
+
+function overMap(x, y) {
+  const r = $('#map-shell').getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+function moveDrag(e) {
+  if (!drag) return;
+  e.preventDefault();
+  drag.x = e.clientX; drag.y = e.clientY;
+  drag.ghost.style.left = e.clientX + 'px';
+  drag.ghost.style.top = e.clientY + 'px';
+  $('#map-shell').classList.toggle('drop-ready', overMap(e.clientX, e.clientY));
+}
+
+function endDrag() {
+  if (!drag) return;
+  window.removeEventListener('pointermove', moveDrag);
+  window.removeEventListener('pointerup', endDrag);
+  window.removeEventListener('pointercancel', endDrag);
+  $('#map-shell').classList.remove('drop-ready');
+  const { x, y, ghost } = drag;
+  ghost.remove();
+  drag = null;
+  if (x !== undefined && overMap(x, y)) {
+    placePin(GameMap.clientToLatLon(x, y));
+  }
+}
+
+/* --------------------------------------------- אירועים ---- */
+function bind() {
+  $$('[data-back]').forEach(b => b.onclick = () => { SFX.tap(); goHome(); });
+  $('#btn-quit').onclick = () => {
+    stopTimer();
+    if (G && G.daily) goHome(); else openLevels(curMode || 'locate');
+  };
+  $('#btn-atlas').onclick = () => { SFX.tap(); openAtlas(); };
+  $('#btn-daily').onclick = () => {
+    SFX.tap();
+    const d = buildDaily();
+    if (SAVE.daily && SAVE.daily.key === d.key) {
+      toast('כבר שיחקתם היום · שיא: ' + SAVE.daily.score + ' נק׳');
+    }
+    startGame('daily', 0, { daily: true, qs: d.qs });
+    G.dailyKey = d.key;
+  };
+  $('#res-again').onclick = () => {
+    SFX.tap();
+    if (G.daily) goHome(); else startGame(G.mode, G.level, { diff: G.diff });
+  };
+  $('#res-next').onclick = () => { SFX.tap(); startGame(G.mode, G.level + 1, { diff: G.diff }); };
+  $$('.ll').forEach(b => b.onclick = () => useLifeline(b.dataset.ll));
+  $('#feedback').onclick = advanceNow;
+  $('#btn-confirm').onclick = () => { SFX.tap(); confirmPlacement(); };
+  initDragPin();
+
+  $('#sheet-close').onclick = () => { $('#sheet').classList.remove('on'); if (currentScreen === 'atlas') renderAtlasList(); };
+  $('#sheet').onclick = e => { if (e.target.id === 'sheet') $('#sheet-close').click(); };
+
+  $('#btn-settings').onclick = () => { SFX.tap(); $('#settings').classList.add('on'); };
+  $('#settings-close').onclick = () => $('#settings').classList.remove('on');
+  $('#settings').onclick = e => { if (e.target.id === 'settings') $('#settings').classList.remove('on'); };
+  $('#opt-sound').onchange = e => { SAVE.sound = e.target.checked ? 1 : 0; persist(); };
+  $('#opt-haptic').onchange = e => { SAVE.haptic = e.target.checked ? 1 : 0; persist(); };
+  $$('#theme-seg button').forEach(b => b.onclick = () => {
+    SAVE.theme = b.dataset.themeOpt; persist(); applyTheme(); SFX.tap();
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if ((SAVE.theme || 'auto') === 'auto') applyTheme();
+  });
+
+  $('#zoom-in').onclick = () => { GameMap.zoomBy(1.7); SFX.tap(); };
+  $('#zoom-out').onclick = () => { GameMap.zoomBy(1 / 1.7); SFX.tap(); };
+  $('#zoom-reset').onclick = () => { GameMap.fitAll(true); SFX.tap(); };
+
+  $('#opt-labels').onchange = e => { SAVE.labels = e.target.checked ? 1 : 0; persist(); };
+  $('#opt-guideq').onchange = e => {
+    SAVE.guideQ = e.target.checked ? 1 : 0; persist(); renderModes();
+    toast(SAVE.guideQ ? 'שאלות ההדרכה פעילות' : 'שאלות ההדרכה כבויות');
+  };
+  $('#btn-reset').onclick = () => {
+    if (!confirm('לאפס את כל ההתקדמות?')) return;
+    SAVE = { ...DEFAULT_SAVE, stars: {}, best: {}, seen: {}, daily: {} };
+    persist(); renderHUD(); renderModes();
+    $('#settings').classList.remove('on');
+    toast('ההתקדמות אופסה');
+  };
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') goHome();
+  });
+}
+
+function goHome() {
+  stopTimer();
+  clearTimeout(nextTimer);
+  GameMap.setTap(null);
+  renderHUD();
+  renderModes();
+  show('home');
+}
+
+/* --------------------------------------------- הפעלה ---- */
+function boot() {
+  applyTheme();
+  ensureMap();
+  if (!Store.persistent) {
+    const n = $('#storage-note');
+    n.classList.add('warn');
+    n.textContent = Store.kind === 'session'
+      ? 'הדפדפן חוסם שמירה קבועה כאן – ההתקדמות תישמר רק עד סגירת הלשונית. פתחו את המשחק בכתובת שלו כדי שיישמר.'
+      : 'הדפדפן חוסם שמירה במכשיר – ההתקדמות לא תישמר. פתחו את המשחק בכתובת שלו במקום בתוך מסגרת מוטמעת.';
+  }
+  $('#opt-sound').checked = !!SAVE.sound;
+  $('#opt-haptic').checked = !!SAVE.haptic;
+  $('#opt-labels').checked = !!SAVE.labels;
+  $('#opt-guideq').checked = !!SAVE.guideQ;
+  bind();
+  renderHUD();
+  renderModes();
+  show('home');
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();

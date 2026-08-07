@@ -1,0 +1,20 @@
+{
+  "name": "מפת הארץ · משחק מורי הדרך",
+  "short_name": "מפת הארץ",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070f18",
+  "theme_color": "#0a1622",
+  "description": "משחק אינטראקטיבי ללימוד הגיאוגרפיה של ארץ ישראל – אתרים, חבלי ארץ ואתרי מורשת עולמית.",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%230a1622'/%3E%3Ctext x='256' y='350' font-size='280' text-anchor='middle'%3E%F0%9F%97%BA%EF%B8%8F%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
