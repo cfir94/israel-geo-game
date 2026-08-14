@@ -212,6 +212,12 @@ const MODES = [
 ];
 MODES.push({ id: 'guide', name: 'סדנת הדרכה', icon: '🎤', color: '#f0abfc', tag: 'מה מספרים בכל אתר',
   desc: 'שלוש שאלות על כל אתר: מה עושים שם, מה נקודת ההדרכה, ומה חשוב לדעת מהשטח.' });
+MODES.push({ id: 'rockAt', name: 'איזה סלע כאן?', icon: '🪨', color: '#3f8fd0', tag: 'אזור על המפה → הסלע שבו',
+  desc: 'אזור מסומן על המפה הגיאולוגית – ואתם מזהים איזה סלע חשוף בו. בדיוק השאלה שנשאלת בבחינה: "מה הסלע בחרמון? ברמות מנשה?"' });
+MODES.push({ id: 'rockWhere', name: 'איפה הסלע הזה?', icon: '⛏️', color: '#d4694a', tag: 'יחידת סלע → האזור במפה',
+  desc: 'מקבלים יחידת סלע – ומאתרים על המפה אזור שבו היא חשופה. הדרך להפנים את המפה הגיאולוגית של הארץ.' });
+MODES.push({ id: 'geology', name: 'חידון גיאולוגי', icon: '🌋', color: '#8fc45c', tag: 'סלעים, קרקעות ומים',
+  desc: 'קארסט, נארי, טרה רוסה מול רנדזינה, אקוויפרים, מכתשים ובזלת – הידע הגיאולוגי שנדרש בהסמכה.' });
 const MODE_BY_ID = Object.fromEntries(MODES.map(m => [m.id, m]));
 
 /* מצבים שמחולקים לרמות קושי לפי האתרים */
@@ -257,6 +263,9 @@ function levelCount(mode, diff = 1) {
     case 'regionFind': return 8;
     case 'trivia': return Math.floor(TRIVIA.length / GAME_CONFIG.questionsPerLevel);
     case 'unesco': return 5;
+    case 'rockAt': return Math.ceil(GEO_AREAS.length / GAME_CONFIG.questionsPerLevel);
+    case 'rockWhere': return 6;
+    case 'geology': return Math.floor(GEO_TRIVIA.length / GAME_CONFIG.questionsPerLevel);
   }
   return 8;
 }
@@ -390,6 +399,52 @@ function buildQuestions(mode, level, diff = 1) {
       site: t.site ? SITE_BY_ID[t.site] : null,
       hint: t.site ? { text: 'קשור לאתר באזור ' + REGION_BY_ID[SITE_BY_ID[t.site].r].name } : { text: 'חשבו על ההקשר ההיסטורי' },
       explain: t.site && SITE_BY_ID[t.site] ? SITE_BY_ID[t.site].n + ': ' + SITE_BY_ID[t.site].f : t.a
+    }));
+  }
+
+  if (mode === 'rockAt') {
+    const areas = shuffle(GEO_AREAS, mulberry32(hashStr('rockAt'))).slice((level - 1) * n, (level - 1) * n + n);
+    const list = areas.length ? areas : GEO_AREAS.slice(0, n);
+    return list.map(a => {
+      const right = ROCKS[a.rock];
+      const wrong = shuffle(Object.keys(ROCKS).filter(k => k !== a.rock), rnd).slice(0, 3);
+      return {
+        kind: 'choice', showMap: true, mapMode: 'geoArea', area: a, time: 22,
+        kicker: '🪨 איזה סלע כאן?',
+        text: a.name, sub: 'האזור המודגש על המפה',
+        options: shuffle([{ label: right.name, correct: true },
+          ...wrong.map(k => ({ label: ROCKS[k].name }))], rnd),
+        hint: { text: right.age },
+        explain: a.name + ' – ' + right.name + ' (' + right.group + '). ' + a.note
+      };
+    });
+  }
+
+  if (mode === 'rockWhere') {
+    const keys = Object.keys(ROCKS).filter(k => GEO_AREAS.some(a => a.rock === k));
+    const order = shuffle(keys, mulberry32(hashStr('rockWhere#' + level)));
+    const list = [];
+    while (list.length < n) list.push(order[list.length % order.length]);
+    return list.map(k => {
+      const r = ROCKS[k];
+      return {
+        kind: 'geoArea', showMap: true, mapMode: 'geoBlank', time: 22, rock: k,
+        kicker: '⛏️ איפה הסלע הזה?',
+        text: r.name, sub: r.group + ' · ' + r.age,
+        hint: { text: 'רמז: ' + r.where },
+        explain: r.name + ' – ' + r.where + '. ' + r.traits
+      };
+    });
+  }
+
+  if (mode === 'geology') {
+    const start = (level - 1) * n;
+    return GEO_TRIVIA.slice(start, start + n).map(t => ({
+      kind: 'choice', showMap: false, time: 22,
+      kicker: '🌋 חידון גיאולוגי', text: t.q, sub: '',
+      options: shuffle([{ label: t.a, correct: true }, ...t.w.map(w => ({ label: w }))], rnd),
+      hint: { text: 'חשבו על הסלע ועל מה שהוא עושה לנוף' },
+      explain: t.a
     }));
   }
 
@@ -649,12 +704,28 @@ function renderQuestion() {
     GameMap.clearPins();
     GameMap.resetRegionStates();
 
+    GameMap.showGeology(false);
     if (q.mapMode === 'pinRegion') {
       GameMap.showRegions(true, .3);
       GameMap.fitAround(q.site.lat, q.site.lon, 0.95, false);
       GameMap.showRegionLabels(true);
       GameMap.pin({ lat: q.site.lat, lon: q.site.lon, type: 'target', pulse: true });
       GameMap.setTap(null);
+    } else if (q.mapMode === 'geoArea') {
+      GameMap.showRegions(false);
+      GameMap.showRegionLabels(false);
+      GameMap.showGeology(true, .18);
+      GameMap.resetAreaStates();
+      GameMap.setAreaState(q.area.id, 'correct');
+      GameMap.fitAll(false);
+      GameMap.setTap(null);
+    } else if (q.mapMode === 'geoBlank') {
+      GameMap.showRegions(false);
+      GameMap.showRegionLabels(false);
+      GameMap.showGeology(true, .55);
+      GameMap.resetAreaStates();
+      GameMap.fitAll(false);
+      GameMap.setTap(ll => onMapTapArea(ll));
     } else if (q.mapMode === 'regions' || q.mapMode === 'regionsBlank') {
       GameMap.showRegions(true, .5);
       GameMap.showRegionLabels(false);
@@ -662,6 +733,7 @@ function renderQuestion() {
       GameMap.setTap(ll => onMapTapRegion(ll));
     } else {
       /* mapPoint – מציבים סיכה בגרירה או בלחיצה, ואז מאשרים */
+      GameMap.showGeology(false);
       GameMap.showRegions(true, .2);
       GameMap.showRegionLabels(!!SAVE.labels);
       GameMap.fitAll(false);
@@ -853,6 +925,21 @@ function onMapTapRegion(ll) {
   award(q, ok ? 100 : 0, ok, ok ? 'נכון!' : 'זה ' + REGION_BY_ID[hit].name + ', והתשובה: ' + REGION_BY_ID[q.targetRegion].name);
 }
 
+function onMapTapArea(ll) {
+  if (G.answered) return;
+  const q = G.qs[G.idx];
+  const hit = GameMap.areaAt(ll.lon, ll.lat);
+  if (!hit) { toast('לחצו בתוך שטח המפה'); return; }
+  const ok = AREA_BY_ID[hit].rock === q.rock;
+  /* מדגישים את כל האזורים שבהם הסלע הזה חשוף */
+  GEO_AREAS.filter(a => a.rock === q.rock).forEach(a => GameMap.setAreaState(a.id, 'correct'));
+  if (!ok) GameMap.setAreaState(hit, 'wrong');
+  $('#map-hud').innerHTML = `<span class="tag">${ROCKS[q.rock].name}</span>`;
+  award(q, ok ? 100 : 0, ok,
+    ok ? 'נכון – ' + AREA_BY_ID[hit].name
+       : 'ב' + AREA_BY_ID[hit].name + ' יש ' + ROCKS[AREA_BY_ID[hit].rock].name);
+}
+
 function timeUp() {
   const q = G.qs[G.idx];
   if (G.answered) return;
@@ -867,6 +954,9 @@ function timeUp() {
     GameMap.pin({ lat: q.target.lat, lon: q.target.lon, type: 'correct', label: q.site ? q.site.n : '' });
     $('#dock').classList.remove('on');
     award(q, 0, false, 'נגמר הזמן – לא הונחה סיכה');
+  } else if (q.kind === 'geoArea') {
+    GEO_AREAS.filter(a => a.rock === q.rock).forEach(a => GameMap.setAreaState(a.id, 'correct'));
+    award(q, 0, false, 'נגמר הזמן! ' + ROCKS[q.rock].where);
   } else {
     GameMap.setRegionState(q.targetRegion, 'correct');
     award(q, 0, false, 'נגמר הזמן! ' + REGION_BY_ID[q.targetRegion].name);
@@ -1017,11 +1107,55 @@ function renderAtlasChips() {
     c.appendChild(b);
   };
   mk('all', 'הכול (' + SITES.length + ')');
+  mk('geo', '🪨 מפה גיאולוגית');
   mk('unesco', '🏆 מורשת עולמית');
   REGIONS.forEach(r => mk(r.id, r.short));
 }
 function renderAtlasList() {
   const list = $('#atlas-list');
+  const legend = $('#geo-legend');
+
+  /* ---- מצב לימוד גיאולוגי ---- */
+  if (atlasFilter === 'geo') {
+    legend.hidden = false;
+    GameMap.clearPins();
+    GameMap.resetRegionStates();
+    GameMap.showRegions(false);
+    GameMap.showRegionLabels(false);
+    GameMap.showGeology(true, .7);
+    GameMap.fitAll(true);
+    GameMap.setTap(ll => {
+      const id = GameMap.areaAt(ll.lon, ll.lat);
+      if (id) openRock(AREA_BY_ID[id]);
+    });
+    legend.innerHTML = Object.entries(ROCKS).map(([k, r]) =>
+      `<button data-rock="${k}"><i style="background:${r.color}"></i>${r.name}</button>`).join('');
+    legend.querySelectorAll('button').forEach(b => b.onclick = () => {
+      const k = b.dataset.rock;
+      GameMap.resetAreaStates();
+      GEO_AREAS.filter(a => a.rock === k).forEach(a => GameMap.setAreaState(a.id, 'correct'));
+      legend.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      const first = GEO_AREAS.find(a => a.rock === k);
+      if (first) openRock(first);
+    });
+    list.innerHTML = GEO_AREAS.map(a =>
+      `<button class="site-row" data-area="${a.id}">
+         <span class="ico"><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:${ROCKS[a.rock].color}"></span></span>
+         <span><b>${a.name}</b><small>${ROCKS[a.rock].name}</small></span>
+       </button>`).join('');
+    list.querySelectorAll('.site-row').forEach(b => b.onclick = () => {
+      const a = AREA_BY_ID[b.dataset.area];
+      GameMap.resetAreaStates();
+      GameMap.setAreaState(a.id, 'correct');
+      GameMap.fitArea(a.id, true);
+      openRock(a);
+    });
+    return;
+  }
+  legend.hidden = true;
+  GameMap.showGeology(false);
+  GameMap.setTap(null);
+
   let arr = SITES;
   if (atlasFilter === 'unesco') arr = UNESCO_SITES;
   else if (atlasFilter !== 'all') arr = SITES.filter(s => s.r === atlasFilter);
@@ -1046,6 +1180,25 @@ function renderAtlasList() {
     b.onclick = () => openSheet(s);
     list.appendChild(b);
   });
+}
+
+/* כרטיס יחידת סלע */
+function openRock(area) {
+  const r = ROCKS[area.rock];
+  SFX.tap();
+  $('#sheet-ico').textContent = '🪨';
+  $('#sheet-name').textContent = area.name;
+  $('#sheet-meta').textContent = r.name + ' · ' + r.group;
+  $('#sheet-fact').innerHTML = `<div class="rock-card">
+    <div class="rock-row"><b>גיל</b><span>${r.age}</span></div>
+    <div class="rock-row"><b>מאפיינים</b><span>${r.traits}</span></div>
+    <div class="rock-row"><b>קרקע</b><span>${r.soil}</span></div>
+    <div class="rock-row"><b>מים</b><span>${r.water}</span></div>
+    <div class="rock-row"><b>איפה עוד</b><span>${r.where}</span></div>
+    <div class="rock-row"><b>הערה</b><span>${area.note}</span></div>
+  </div>`;
+  $('#sheet-tags').innerHTML = '';
+  $('#sheet').classList.add('on');
 }
 
 function openSheet(s) {

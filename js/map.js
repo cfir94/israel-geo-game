@@ -207,6 +207,20 @@ const GameMap = (() => {
         'stroke-dasharray': '5 4', 'stroke-opacity': 0.55
       }, layers.borders));
 
+    /* שכבה גיאולוגית – מצוירת רק כשמבקשים אותה */
+    layers.geo = el('g', { class: 'lyr-geo', 'clip-path': 'url(#clip-land)' }, root);
+    if (typeof GEO_AREAS !== 'undefined') {
+      GEO_AREAS.forEach(a => { a._poly = offsetRing(a.poly, 0.05); });
+      GEO_AREAS.slice().reverse().forEach(a => {
+        const p = el('path', {
+          d: pathOf(a._poly), fill: ROCKS[a.rock].color, stroke: ROCKS[a.rock].color,
+          'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke',
+          class: 'geo-area', 'data-area': a.id
+        }, layers.geo);
+        p.style.opacity = 0;
+      });
+    }
+
     layers.labels = el('g', { class: 'lyr-labels' }, root);
     layers.pins = el('g', { class: 'lyr-pins' }, root);
     layers.fx = el('g', { class: 'lyr-fx' }, root);
@@ -502,6 +516,37 @@ const GameMap = (() => {
     });
   }
 
+  /* ---------------------------------------- שכבה גיאולוגית -- */
+  let geoOp = 0.6;
+  function showGeology(on, opacity = 0.6) {
+    geoOp = opacity;
+    layers.geo.querySelectorAll('.geo-area').forEach(p => {
+      p.style.opacity = on ? opacity : 0;
+    });
+  }
+  function setAreaState(id, state) {
+    const p = layers.geo.querySelector(`[data-area="${id}"]`);
+    if (!p) return;
+    p.setAttribute('class', 'geo-area ' + (state || ''));
+    p.style.opacity = state ? 0.92 : geoOp;
+  }
+  function resetAreaStates() {
+    layers.geo.querySelectorAll('.geo-area').forEach(p => {
+      p.setAttribute('class', 'geo-area');
+      p.style.opacity = geoOp;
+    });
+  }
+  function areaAt(lon, lat) {
+    for (const a of GEO_AREAS) if (pointInPoly(lon, lat, a.poly)) return a.id;
+    for (const a of GEO_AREAS) if (a._poly && pointInPoly(lon, lat, a._poly)) return a.id;
+    return null;
+  }
+  function fitArea(id, animate = true) {
+    const a = AREA_BY_ID[id];
+    if (!a) return fitAll(animate);
+    fitBounds(a.poly.map(([lo, la]) => ({ lat: la, lon: lo })), 0.15, animate);
+  }
+
   function showRegionLabels(on) {
     layers.labels.innerHTML = '';
     if (!on) return;
@@ -525,6 +570,7 @@ const GameMap = (() => {
     clientToLatLon, latLonToClient, projX, projY,
     regionAt, onLand, pin, line, clearPins,
     showRegions, setRegionState, resetRegionStates, showRegionLabels,
+    showGeology, setAreaState, resetAreaStates, areaAt, fitArea,
     setTap, haversine, regionCenters, refreshTheme,
     get svg() { return svg; },
     get layers() { return layers; }

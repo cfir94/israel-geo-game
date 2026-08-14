@@ -735,3 +735,22 @@ p { margin: 0; }
 .board-row b { flex: 1; font-size: 14.5px; }
 .board-row .sc { font-size: 13px; font-weight: 800; color: var(--gold); direction: ltr; unicode-bidi: isolate; }
 .board-empty { text-align: center; color: var(--txt-dim); font-size: 13.5px; padding: 30px 10px; line-height: 1.6; }
+
+/* ---------- שכבה גיאולוגית ---------- */
+.geo-area { transition: opacity .3s, filter .3s; }
+.geo-area.correct { filter: brightness(1.35) saturate(1.25); }
+.geo-area.wrong   { filter: grayscale(.75) brightness(.65); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.legend button {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line); background: var(--card); color: var(--txt);
+  font: inherit; font-size: 11.5px; font-weight: 700;
+  border-radius: 99px; padding: 6px 11px; cursor: pointer;
+}
+.legend button.on { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 15%, transparent); }
+.legend i { width: 12px; height: 12px; border-radius: 4px; flex: 0 0 12px; }
+
+.rock-card { display: grid; gap: 9px; }
+.rock-row { display: flex; gap: 9px; font-size: 13.5px; line-height: 1.55; }
+.rock-row b { flex: 0 0 68px; color: var(--txt-dim); font-weight: 700; font-size: 12.5px; padding-top: 1px; }
