@@ -49,6 +49,7 @@
   --label-halo:   rgba(255,255,255,.96);
   --pin-core:     #ffffff;
   --river:        #2b86b8;
+  --geo-line:     rgba(255,255,255,.55);
   --region-op-scale: 1;
 
   --r-lg:      26px;
@@ -104,6 +105,7 @@
     --label-halo:   rgba(4,12,20,.92);
     --pin-core:     #08131e;
     --river:        #3ba7d8;
+    --geo-line:     rgba(6,18,28,.5);
     --region-op-scale: 1;
   }
 }
@@ -151,6 +153,7 @@
   --label-halo:   rgba(4,12,20,.92);
   --pin-core:     #08131e;
   --river:        #3ba7d8;
+  --geo-line:     rgba(6,18,28,.5);
   --region-op-scale: 1;
 }
 
@@ -748,6 +751,11 @@ p { margin: 0; }
 
 /* ---------- שכבה גיאולוגית ---------- */
 .geo-area { transition: opacity .3s, filter .3s; }
+/* כשהמפה הגיאולוגית מוצגת, היבשה שמתחתיה מוסתרת – אחרת הגרדיאנט
+   של הקרקע מתערבב בצבעי התקן והם יוצאים עכורים. */
+.gamemap.geo-on .lyr-land   { opacity: 0; }
+.gamemap.geo-on .lyr-water  { opacity: .55; }
+.gamemap.geo-on .lyr-borders { opacity: .8; }
 .geo-area.correct { filter: brightness(1.35) saturate(1.25); }
 .geo-area.wrong   { filter: grayscale(.75) brightness(.65); }
 

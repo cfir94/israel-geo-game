@@ -1024,7 +1024,7 @@ function renderQuestion() {
     } else if (q.mapMode === 'geoBlank') {
       GameMap.showRegions(false);
       GameMap.showRegionLabels(false);
-      GameMap.showGeology(true, .55);
+      GameMap.showGeology(true);
       GameMap.resetAreaStates();
       GameMap.fitAll(false);
       GameMap.setTap(ll => onMapTapArea(ll));
@@ -1120,7 +1120,7 @@ function revealGeoMap(q) {
      נבחרו מתקפלים, כדי שהמפה הגיאולוגית תהיה גדולה וקריאה. */
   $('#screen-play').classList.add('geo-reveal');
   /* המפה הגיאולוגית המלאה של הארץ, והיעד מודגש בתוכה */
-  GameMap.revealGeology(0.85);
+  GameMap.revealGeology();
   if (q.target.area) {
     GameMap.markArea(q.target.area);
   } else {
@@ -1658,7 +1658,7 @@ function renderAtlasList() {
     GameMap.resetRegionStates();
     GameMap.showRegions(false);
     GameMap.showRegionLabels(false);
-    GameMap.showGeology(true, .7);
+    GameMap.showGeology(true);
     GameMap.fitAll(true);
     GameMap.setTap(ll => {
       const id = GameMap.areaAt(ll.lon, ll.lat);

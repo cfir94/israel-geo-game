@@ -210,13 +210,24 @@ const GameMap = (() => {
     /* שכבה גיאולוגית – מצוירת רק כשמבקשים אותה */
     layers.geo = el('g', { class: 'lyr-geo', 'clip-path': 'url(#clip-land)' }, root);
     if (typeof GEO_AREAS !== 'undefined') {
+      /* שתי שכבות משנה, בדיוק לפי הכללים של areaAt():
+         מילוי – המצולעים המורחבים, סוגרים את התפרים בין היחידות;
+         מדויק – המצולעים עצמם, מצוירים מעליו.
+         כך הצבע שרואים בכל נקודה זהה לתשובה שמחזירה בדיקת הלחיצה. */
       GEO_AREAS.forEach(a => { a._poly = offsetRing(a.poly, 0.05); });
+      const gFill = el('g', { class: 'geo-fill' }, layers.geo);
+      const gEdge = el('g', { class: 'geo-edge' }, layers.geo);
       GEO_AREAS.slice().reverse().forEach(a => {
+        el('path', {
+          d: pathOf(a._poly), fill: ROCKS[a.rock].color,
+          class: 'geo-seam', 'data-seam': a.id
+        }, gFill);
         const p = el('path', {
-          d: pathOf(a._poly), fill: ROCKS[a.rock].color, stroke: ROCKS[a.rock].color,
-          'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke',
+          d: pathOf(a.poly), fill: ROCKS[a.rock].color,
+          stroke: 'var(--geo-line)', 'stroke-width': 1,
+          'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round',
           class: 'geo-area', 'data-area': a.id
-        }, layers.geo);
+        }, gEdge);
         p.style.opacity = 0;
       });
     }
@@ -530,14 +541,18 @@ const GameMap = (() => {
   }
 
   /* ---------------------------------------- שכבה גיאולוגית -- */
-  let geoOp = 0.6, geoVisible = false;
-  function showGeology(on, opacity = 0.6) {
+  /* צבעי התקן צריכים להיקרא כפי שהם, ולכן השכבה אטומה כמעט לגמרי
+     והיבשה שמתחתיה מוסתרת. שקיפות מערבבת את הגוונים ומעכירה אותם. */
+  let geoOp = 0.95, geoVisible = false;
+  function showGeology(on, opacity = 0.95) {
     geoOp = opacity;
     geoVisible = !!on;
+    svg.classList.toggle('geo-on', !!on);
     layers.geo.querySelectorAll('.geo-area').forEach(p => {
       p.setAttribute('class', 'geo-area');
       p.style.opacity = on ? opacity : 0;
     });
+    syncSeams(on ? opacity : 0);
   }
   function setAreaState(id, state) {
     const p = layers.geo.querySelector(`[data-area="${id}"]`);
@@ -551,6 +566,12 @@ const GameMap = (() => {
       p.setAttribute('class', 'geo-area');
       p.style.opacity = geoVisible ? geoOp : 0;
     });
+    syncSeams(geoVisible ? geoOp : 0);
+  }
+  /* שכבת המילוי חיה יחד עם שכבת הצבע */
+  function syncSeams(op) {
+    const g = layers.geo.querySelector('.geo-fill');
+    if (g) g.style.opacity = op;
   }
   /* הדגשת יעד בלי לחשוף את צבע הסלע – לשלב השאלה */
   function probeArea(id) {
@@ -559,12 +580,14 @@ const GameMap = (() => {
     p.setAttribute('class', 'geo-area probe');
     p.style.opacity = 1;
   }
-  function revealGeology(opacity = 0.85) {
+  function revealGeology(opacity = 0.95) {
     geoVisible = true; geoOp = opacity;
+    svg.classList.add('geo-on');
     layers.geo.querySelectorAll('.geo-area').forEach(p => {
       if (!p.classList.contains('probe-done')) p.setAttribute('class', 'geo-area');
       p.style.opacity = opacity;
     });
+    syncSeams(opacity);
   }
   function markArea(id) {
     const p = layers.geo.querySelector(`[data-area="${id}"]`);
