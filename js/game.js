@@ -37,7 +37,7 @@ const KEY = 'israel-geo-game-v1';
 const DEFAULT_SAVE = {
   coins: 120, xp: 0, stars: {}, best: {},
   sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto',
-  daily: {}, seen: {}
+  daily: {}, seen: {}, misses: []
 };
 
 const Store = (() => {
@@ -72,7 +72,8 @@ function load() {
     const raw = Store.get();
     if (!raw) return { ...DEFAULT_SAVE };
     const d = JSON.parse(raw);
-    return { ...DEFAULT_SAVE, ...d, stars: d.stars || {}, best: d.best || {}, seen: d.seen || {} };
+    return { ...DEFAULT_SAVE, ...d, stars: d.stars || {}, best: d.best || {},
+      seen: d.seen || {}, misses: Array.isArray(d.misses) ? d.misses : [] };
   } catch (e) { return { ...DEFAULT_SAVE }; }
 }
 function persist() {
@@ -273,11 +274,11 @@ function levelCount(mode, diff = 1) {
   }
   switch (mode) {
     case 'regionFind': return 8;
-    case 'trivia': return Math.floor(TRIVIA.length / GAME_CONFIG.questionsPerLevel);
+    case 'trivia': return evenLevels(TRIVIA.length, GAME_CONFIG.questionsPerLevel);
     case 'unesco': return 5;
     case 'rockAt': return Math.ceil(GEO_AREAS.length / GAME_CONFIG.questionsPerLevel);
     case 'rockWhere': return 6;
-    case 'geology': return Math.floor(GEO_TRIVIA.length / GAME_CONFIG.questionsPerLevel);
+    case 'geology': return evenLevels(GEO_TRIVIA.length, GAME_CONFIG.questionsPerLevel);
     case 'routes': return pathLevels('routes');
     case 'streams': return pathLevels('streams');
     case 'folds': return pathLevels('folds');
@@ -503,15 +504,17 @@ function pathPool(mode) {
   });
   return (_pathPools[mode] = out);
 }
-/* חלוקה אחידה לשלבים – בלי שלב אחרון קטוע */
-function pathLevels(mode) {
-  return Math.max(1, Math.round(pathPool(mode).length / sitesPerLevel(mode)));
-}
-function pathSlice(mode, level) {
-  const pool = pathPool(mode), lv = pathLevels(mode);
+/* ---------- חלוקה אחידה לשלבים ----------
+   slice רגיל משאיר שאלות מיותמות בסוף המאגר או שלב אחרון קטוע.
+   כאן מחלקים את המאגר לשלבים שווים בגודלם, בלי לאבד אף שאלה. */
+function evenLevels(len, per) { return Math.max(1, Math.round(len / per)); }
+function evenSlice(arr, level, per) {
+  const lv = evenLevels(arr.length, per);
   const l = Math.min(Math.max(1, level), lv);
-  return pool.slice(Math.floor((l - 1) * pool.length / lv), Math.floor(l * pool.length / lv));
+  return arr.slice(Math.floor((l - 1) * arr.length / lv), Math.floor(l * arr.length / lv));
 }
+function pathLevels(mode) { return evenLevels(pathPool(mode).length, sitesPerLevel(mode)); }
+function pathSlice(mode, level) { return evenSlice(pathPool(mode), level, sitesPerLevel(mode)); }
 
 function distractorSites(site, count, rnd) {
   const same = SITES.filter(s => s.r === site.r && s.id !== site.id);
@@ -593,9 +596,7 @@ function buildQuestions(mode, level, diff = 1) {
   }
 
   if (mode === 'trivia') {
-    const start = (level - 1) * n;
-    const bank = TRIVIA.slice(start, start + n);
-    return bank.map(t => ({
+    return evenSlice(TRIVIA, level, n).map(t => ({
       kind: 'choice', showMap: false, time: 22,
       kicker: 'חידון מורה הדרך',
       text: t.q, sub: '',
@@ -646,8 +647,7 @@ function buildQuestions(mode, level, diff = 1) {
   }
 
   if (mode === 'geology') {
-    const start = (level - 1) * n;
-    return GEO_TRIVIA.slice(start, start + n).map(t => ({
+    return evenSlice(GEO_TRIVIA, level, n).map(t => ({
       kind: 'choice', showMap: false, time: 22,
       kicker: '🌋 חידון גיאולוגי', text: t.q, sub: '',
       options: shuffle([{ label: t.a, correct: true }, ...t.w.map(w => ({ label: w }))], rnd),
@@ -694,6 +694,72 @@ function buildQuestions(mode, level, diff = 1) {
     return out;
   }
   return [];
+}
+
+/* ------------------------------------ תרגול טעויות ----
+   כל שאלה שנפלה נשמרת כהפניה – מצב, רמה, שלב וזיהוי השאלה –
+   ולא כאובייקט. כך אפשר לבנות אותה מחדש בכל פעם מהנתונים,
+   וגם שמירה ישנה נשארת תקפה אחרי עדכון תוכן.               */
+const MISS_CAP = 80;
+const missKey = q => q.kind + '|' + q.text;
+
+function recordMiss(q) {
+  if (!G || G.daily) return;
+  /* שאלות הדרכה שמוזרקות תוך כדי אינן חלק מהשלב הבנוי */
+  if (q.guide && G.mode !== 'guide') return;
+  const rec = { m: G.mode, d: G.diff, l: G.level, k: missKey(q), t: Date.now() };
+  SAVE.misses = [rec, ...(SAVE.misses || []).filter(x => x.k !== rec.k)].slice(0, MISS_CAP);
+}
+function clearMiss(q) {
+  const k = missKey(q);
+  const before = (SAVE.misses || []).length;
+  SAVE.misses = (SAVE.misses || []).filter(x => x.k !== k);
+  return SAVE.misses.length !== before;
+}
+function missCount() { return (SAVE.misses || []).length; }
+
+/* בונה מחדש את השאלות שנכשלו. הפניה שכבר אין לה מקור בתוכן
+   – למשל אחרי עדכון – פשוט נושרת. */
+function buildPractice(limit = 10) {
+  const want = (SAVE.misses || []).slice(0, limit);
+  const byLevel = {};
+  want.forEach(r => {
+    const key = r.m + '|' + r.d + '|' + r.l;
+    (byLevel[key] = byLevel[key] || []).push(r.k);
+  });
+  const out = [];
+  const alive = new Set();
+  for (const key in byLevel) {
+    const [m, d, l] = key.split('|');
+    let qs = [];
+    try { qs = buildQuestions(m, +l, +d); } catch (e) { continue; }
+    const want2 = new Set(byLevel[key]);
+    qs.forEach(q => {
+      if (want2.has(missKey(q))) { out.push(q); alive.add(missKey(q)); }
+    });
+  }
+  /* מנקים הפניות שאבד להן המקור, כדי שהמונה יישאר כן */
+  const dead = (SAVE.misses || []).filter(r => !alive.has(r.k) && want.some(w => w.k === r.k));
+  if (dead.length) {
+    SAVE.misses = SAVE.misses.filter(r => !dead.includes(r));
+    persist();
+  }
+  /* לפי סדר השמירה – הטעות האחרונה ראשונה */
+  const order = want.map(r => r.k);
+  return out.sort((a, b) => order.indexOf(missKey(a)) - order.indexOf(missKey(b)));
+}
+
+function startPractice() {
+  const qs = buildPractice(10);
+  if (!qs.length) { toast('אין טעויות לתרגל – כל הכבוד'); renderPracticeRow(); return; }
+  startGame('practice', 0, { practice: true, qs });
+}
+function renderPracticeRow() {
+  const row = $('#practice-row');
+  if (!row) return;
+  const n = missCount();
+  row.hidden = n === 0;
+  $('#miss-count').textContent = n;
 }
 
 /* מאגר מעורב לאתגר היומי */
@@ -764,6 +830,7 @@ function renderHUD() {
     $('#xp-next').textContent = SAVE.xp + ' / ' + r.next + ' נק׳';
     $('#xp-fill').style.width = Math.min(100, ((SAVE.xp - r.base) / (r.next - r.base)) * 100) + '%';
   }
+  renderPracticeRow();
   $('#cost-fifty').textContent = GAME_CONFIG.fiftyCost;
   $('#cost-hint').textContent = GAME_CONFIG.hintCost;
   $('#cost-skip').textContent = GAME_CONFIG.skipCost;
@@ -844,14 +911,14 @@ let G = null;
 function startGame(mode, level, opts = {}) {
   clearTimeout(nextTimer);
   const diff = opts.diff || curDiff;
-  const qs = opts.daily ? opts.qs : buildQuestions(mode, level, diff);
+  const qs = (opts.daily || opts.practice) ? opts.qs : buildQuestions(mode, level, diff);
   G = {
     mode, level, diff, qs, idx: 0, score: 0, correct: 0,
-    answered: false, results: [], daily: !!opts.daily,
+    answered: false, results: [], daily: !!opts.daily, practice: !!opts.practice,
     used: { fifty: false, hint: false }
   };
   $('#play-score').textContent = '0';
-  $('#lifelines').style.display = opts.daily ? 'none' : 'flex';
+  $('#lifelines').style.display = (opts.daily || opts.practice) ? 'none' : 'flex';
   show('play');
   renderQuestion();
 }
@@ -1020,6 +1087,9 @@ function award(q, pts, ok, note) {
   $('#play-score').textContent = G.score;
 
   G.results[G.idx] = { q, ok, note, pts: total };
+  /* יומן הטעויות: נכשלת – נכנסת לתרגול; ענית נכון בתרגול – יצאת */
+  if (G.practice) { if (ok) { clearMiss(q); persist(); } }
+  else if (!ok) { recordMiss(q); persist(); }
   renderDots();
 
   if (ok) { SFX.good(); buzz(24); } else { SFX.bad(); buzz([28, 60, 28]); }
@@ -1395,15 +1465,18 @@ function finishGame() {
   const maxScore = G.qs.length * 125;
   const misses0 = G.results.filter(r => r && !r.ok).length;
   const pct = G.score / maxScore;
-  const stars = G.daily ? 0 : gradeStars(G.correct / G.qs.length);
+  const solo = G.daily || G.practice;   // סיבוב ללא שלב וללא כוכבים
+  const stars = solo ? 0 : gradeStars(G.correct / G.qs.length);
 
   let coins = G.correct * GAME_CONFIG.coinsCorrect;
-  if (!G.daily && G.correct === G.qs.length) coins += GAME_CONFIG.coinsPerfect;
+  if (!solo && G.correct === G.qs.length) coins += GAME_CONFIG.coinsPerfect;
   SAVE.coins += coins;
   SAVE.xp += G.score;
 
   if (G.daily) {
     SAVE.daily = { key: G.dailyKey, score: G.score, correct: G.correct };
+  } else if (G.practice) {
+    /* התרגול לא מזכה בכוכבים – הרווח הוא שהטעויות יורדות מהיומן */
   } else {
     const key = diffKey(G.mode, G.diff);
     SAVE.stars[key] = SAVE.stars[key] || {};
@@ -1413,20 +1486,25 @@ function finishGame() {
   persist();
 
   const sr = $('#stars-row');
-  sr.style.display = G.daily ? 'none' : 'flex';
+  sr.style.display = solo ? 'none' : 'flex';
   $$('#stars-row .star').forEach((s, i) => {
     s.classList.remove('on');
     if (i < stars) setTimeout(() => { s.classList.add('on'); SFX.coin(); }, 380 + i * 300);
   });
 
   const titles = ['נמשיך להתאמן', 'לא רע בכלל!', 'יפה מאוד!', 'מושלם! 🎉'];
-  $('#res-title').textContent = G.daily
-    ? (G.correct >= 8 ? 'אתגר יומי – מצוין!' : 'אתגר יומי הושלם')
-    : titles[stars];
-  $('#res-sub').textContent = G.daily
-    ? 'חזרו מחר לאתגר חדש'
-    : MODE_BY_ID[G.mode].name + ' · ' +
-      (BY_DIFF.has(G.mode) ? DIFFS[G.diff - 1].name + ' · ' : '') + 'שלב ' + G.level;
+  const left = missCount();
+  $('#res-title').textContent = G.practice
+    ? (G.correct === G.qs.length ? 'ניקינו את הטעויות! 🎯' : 'תרגול טעויות הושלם')
+    : G.daily
+      ? (G.correct >= 8 ? 'אתגר יומי – מצוין!' : 'אתגר יומי הושלם')
+      : titles[stars];
+  $('#res-sub').textContent = G.practice
+    ? (left ? 'נשארו ' + left + ' שאלות ביומן הטעויות' : 'יומן הטעויות ריק – כל הכבוד')
+    : G.daily
+      ? 'חזרו מחר לאתגר חדש'
+      : MODE_BY_ID[G.mode].name + ' · ' +
+        (BY_DIFF.has(G.mode) ? DIFFS[G.diff - 1].name + ' · ' : '') + 'שלב ' + G.level;
   $('#res-score').textContent = G.score;
   $('#res-correct').textContent = G.correct + '/' + G.qs.length;
   $('#res-coins').textContent = '+' + coins;
@@ -1439,11 +1517,11 @@ function finishGame() {
         <div><b>${r.q.site ? r.q.site.n : r.q.text}</b><p>${(r.q.explain || '').slice(0, 150)}</p></div></div>`).join('')
     : '<div class="rv"><span class="mk">🏅</span><div><b>ללא טעויות</b><p>סיבוב מושלם – אתם מוכנים לשטח.</p></div></div>';
 
-  const hasNext = !G.daily && G.level < levelCount(G.mode, G.diff) && stars > 0;
+  const hasNext = !solo && G.level < levelCount(G.mode, G.diff) && stars > 0;
   $('#res-next').style.display = hasNext ? 'block' : 'none';
-  $('#res-again').textContent = G.daily ? 'לתפריט' : 'שוב';
+  $('#res-again').textContent = G.practice ? (left ? 'עוד סיבוב' : 'לתפריט') : G.daily ? 'לתפריט' : 'שוב';
 
-  if (stars === 3 || (G.daily && G.correct >= 8)) { SFX.win(); confetti(); }
+  if (stars === 3 || (G.daily && G.correct >= 8) || (G.practice && G.correct === G.qs.length)) { SFX.win(); confetti(); }
   else if (stars > 0) SFX.coin();
 
   renderHUD();
@@ -1469,9 +1547,12 @@ function confetti() {
 }
 
 /* --------------------------------------------- אטלס ---- */
-let atlasFilter = 'all';
+let atlasFilter = 'all', atlasQuery = '';
 function openAtlas() {
   show('atlas');
+  atlasQuery = '';
+  const box = $('#atlas-search');
+  if (box) box.value = '';
   mountMap('atlas-host');
   GameMap.showRegions(true, .35);
   GameMap.showRegionLabels(true);
@@ -1492,12 +1573,83 @@ function renderAtlasChips() {
   };
   mk('all', 'הכול (' + SITES.length + ')');
   mk('geo', '🪨 מפה גיאולוגית');
+  ATLAS_LAYERS.forEach(l => mk(l.id, l.icon + ' ' + l.name));
   mk('unesco', '🏆 מורשת עולמית');
   REGIONS.forEach(r => mk(r.id, r.short));
+}
+
+/* שכבות הקווים באטלס – אותם נתונים של מצבי המשחק, במצב עיון */
+const ATLAS_LAYERS = [
+  { id: 'lyRoutes', icon: '🐫', name: 'דרכים', kind: 'route', items: () => ROUTES,
+    sub: it => it.modern },
+  { id: 'lyStreams', icon: '💧', name: 'נחלים', kind: 'stream', items: () => STREAMS,
+    sub: it => it.src + ' → ' + it.out },
+  { id: 'lyFolds', icon: '⛰️', name: 'מבנה', kind: 'fold', items: () => FOLDS,
+    sub: it => (it.kind === 'anticline' ? 'קמר' : 'קער') + ' · ' + it.rock },
+  { id: 'lyBounds', icon: '📐', name: 'גבולות', kind: 'bound', items: () => BOUNDS,
+    sub: it => it.a + ' | ' + it.b }
+];
+const LAYER_BY_ID = Object.fromEntries(ATLAS_LAYERS.map(l => [l.id, l]));
+
+/* כרטיס פרטים לקו שנבחר באטלס */
+function openPath(layer, it) {
+  const rows = layer.kind === 'route'
+    ? [['תקופה', it.era], ['בימינו', it.modern], ['שמרו עליה', it.guards]]
+    : layer.kind === 'stream'
+      ? [['מקור', it.src], ['שפך', it.out]]
+      : layer.kind === 'fold'
+        ? [['מבנה', it.kind === 'anticline' ? 'קמר' : 'קער'], ['יחידה', it.unit],
+           ['מסלע', it.rock], ['שיא', it.peak], ['היכן', it.where]]
+        : [['מפריד בין', it.a], ['לבין', it.b]];
+  SFX.tap();
+  $('#sheet-ico').textContent = layer.icon;
+  $('#sheet-name').textContent = it.name;
+  $('#sheet-meta').textContent = layer.name + (it.alt ? ' · ' + it.alt : '');
+  $('#sheet-fact').innerHTML = '<div class="rock-card">' +
+    rows.filter(r => r[1]).map(r =>
+      `<div class="rock-row"><b>${escapeHtml(r[0])}</b><span>${escapeHtml(r[1])}</span></div>`).join('') +
+    `<div class="rock-row"><b>הסבר</b><span>${escapeHtml(it.note)}</span></div></div>`;
+  $('#sheet-tags').innerHTML = '';
+  $('#sheet').classList.add('on');
+
+  GameMap.showPaths([it.id]);
+  GameMap.setPathState(it.id, 'correct');
+  GameMap.fitPaths([it.id], 0.3, true,
+    layer.kind === 'fold' || layer.kind === 'bound' ? 2.4 : 0);
 }
 function renderAtlasList() {
   const list = $('#atlas-list');
   const legend = $('#geo-legend');
+  const q = (atlasQuery || '').trim();
+  GameMap.hidePaths();   /* אחרת קווים ממשחק קודם נשארים על המפה */
+
+  /* ---- שכבת קווים: דרכים, נחלים, מבנה או גבולות ---- */
+  const layer = LAYER_BY_ID[atlasFilter];
+  if (layer) {
+    legend.hidden = true;
+    GameMap.clearPins();
+    GameMap.resetRegionStates();
+    GameMap.showRegions(false);
+    GameMap.showRegionLabels(false);
+    GameMap.showGeology(false);
+    let items = layer.items();
+    if (q) items = items.filter(it => it.name.includes(q));
+    GameMap.showPaths(items.map(it => it.id));
+    GameMap.fitAll(true);
+    GameMap.setTap(ll => {
+      const id = GameMap.pathAt(ll.lon, ll.lat, items.map(it => it.id));
+      if (id) openPath(layer, items.find(it => it.id === id));
+    });
+    list.innerHTML = items.map(it =>
+      `<button class="site-row" data-path="${it.id}">
+         <span class="ico"><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:${it.color}"></span></span>
+         <span><b>${escapeHtml(it.name)}</b><small>${escapeHtml(layer.sub(it) || '')}</small></span>
+       </button>`).join('') ||
+      '<div class="board-empty">אין תוצאות לחיפוש הזה.</div>';
+    list.querySelectorAll('.site-row').forEach(b => b.onclick = () =>
+      openPath(layer, items.find(it => it.id === b.dataset.path)));
+    return;
+  }
 
   /* ---- מצב לימוד גיאולוגי ---- */
   if (atlasFilter === 'geo') {
@@ -1543,6 +1695,8 @@ function renderAtlasList() {
   let arr = SITES;
   if (atlasFilter === 'unesco') arr = UNESCO_SITES;
   else if (atlasFilter !== 'all') arr = SITES.filter(s => s.r === atlasFilter);
+  /* חיפוש חופשי – גם בשם וגם בעובדה, כדי למצוא לפי נושא */
+  if (q) arr = arr.filter(s => s.n.includes(q) || (s.f || '').includes(q));
 
   GameMap.clearPins();
   GameMap.resetRegionStates();
@@ -1554,7 +1708,7 @@ function renderAtlasList() {
   }
   arr.forEach(s => GameMap.pin({ lat: s.lat, lon: s.lon, type: 'atlas' }));
 
-  list.innerHTML = '';
+  list.innerHTML = arr.length ? '' : '<div class="board-empty">אין תוצאות לחיפוש הזה.</div>';
   arr.forEach(s => {
     const b = document.createElement('button');
     b.className = 'site-row';
@@ -1815,9 +1969,13 @@ function bind() {
   $$('[data-back]').forEach(b => b.onclick = () => { SFX.tap(); goHome(); });
   $('#btn-quit').onclick = () => {
     stopTimer();
-    if (G && G.daily) goHome(); else openLevels(curMode || 'locate');
+    if (G && (G.daily || G.practice)) goHome(); else openLevels(curMode || 'locate');
   };
   $('#btn-atlas').onclick = () => { SFX.tap(); openAtlas(); };
+  $('#btn-practice').onclick = () => { SFX.tap(); startPractice(); };
+  $('#atlas-search').addEventListener('input', e => {
+    atlasQuery = e.target.value; renderAtlasList();
+  });
   $('#btn-daily').onclick = () => {
     SFX.tap();
     const d = buildDaily();
@@ -1829,7 +1987,9 @@ function bind() {
   };
   $('#res-again').onclick = () => {
     SFX.tap();
-    if (G.daily) goHome(); else startGame(G.mode, G.level, { diff: G.diff });
+    if (G.practice) { if (missCount()) startPractice(); else goHome(); }
+    else if (G.daily) goHome();
+    else startGame(G.mode, G.level, { diff: G.diff });
   };
   $('#res-next').onclick = () => { SFX.tap(); startGame(G.mode, G.level + 1, { diff: G.diff }); };
   $$('.ll').forEach(b => b.onclick = () => useLifeline(b.dataset.ll));
@@ -1895,8 +2055,10 @@ function goHome() {
   stopTimer();
   clearTimeout(nextTimer);
   GameMap.setTap(null);
+  GameMap.hidePaths();
   renderHUD();
   renderModes();
+  renderPracticeRow();
   show('home');
 }
 
@@ -1925,5 +2087,13 @@ function boot() {
   renderModes();
   show('home');
 }
+/* עבודה בלי רשת. נרשם רק כשהדף מוגש מקובץ אמיתי – בגרסת
+   ה-Artifact המשחק מוטמע ואין לו service worker משלו. */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* לא קריטי */ });
+  });
+}
+
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
 else boot();

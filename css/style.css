@@ -795,6 +795,34 @@ p { margin: 0; }
 .rock-legend span.hit { color: var(--txt); border-color: var(--teal); background: color-mix(in srgb, var(--teal) 14%, transparent); }
 .rock-legend i { width: 10px; height: 10px; border-radius: 3px; }
 
+/* ---------- חיפוש באטלס ---------- */
+.atlas-search {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  border: 1px solid var(--line); background: var(--card);
+  border-radius: 999px; padding: 0 15px; margin-bottom: 10px;
+}
+.atlas-search span { font-size: 14px; opacity: .7; }
+.atlas-search input {
+  flex: 1; min-width: 0; border: 0; background: none; color: var(--txt);
+  font: inherit; font-size: 14.5px; font-weight: 600; padding: 12px 0;
+  outline: none;
+}
+.atlas-search input::placeholder { color: var(--txt-dim); font-weight: 500; }
+.atlas-search input::-webkit-search-cancel-button { filter: grayscale(1) opacity(.6); }
+
+/* כפתור תרגול הטעויות – רוחב מלא, מונה, ומודגש כי הוא העיקר */
+.ghost-btn.wide { flex: 1; }
+.ghost-btn.accent {
+  border-color: color-mix(in srgb, var(--rose) 45%, transparent);
+  background: color-mix(in srgb, var(--rose) 12%, transparent);
+}
+.ghost-btn.wide b {
+  display: inline-block; min-width: 22px; margin-inline-start: 6px;
+  background: var(--rose); color: #fff; border-radius: 999px;
+  font-size: 12px; font-weight: 900; padding: 1px 7px;
+  direction: ltr; unicode-bidi: isolate;
+}
+
 /* ---------- דרכים עתיקות, נהרות ונחלים ---------- */
 .geo-path { transition: opacity .3s, stroke .25s, stroke-width .25s; }
 .geo-path.pk-route { stroke-dasharray: 11 8; }

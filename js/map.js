@@ -585,14 +585,19 @@ const GameMap = (() => {
   }
 
   /* ------------------------------ דרכים, נהרות ונחלים -------- */
+  /* הרשימה והאינדקס נבנים פעם אחת – pathAt נקרא על כל לחיצה */
+  let _pathList = null, _pathIx = null, _pathLen = null;
   function pathItems() {
+    if (_pathList) return _pathList;
     const g = (src, pk) => (Array.isArray(src) ? src : []).map(it => ({ it, pk }));
-    return g(typeof ROUTES !== 'undefined' && ROUTES, 'route')
+    _pathList = g(typeof ROUTES !== 'undefined' && ROUTES, 'route')
       .concat(g(typeof STREAMS !== 'undefined' && STREAMS, 'stream'))
       .concat(g(typeof FOLDS !== 'undefined' && FOLDS, 'fold'))
       .concat(g(typeof BOUNDS !== 'undefined' && BOUNDS, 'bound'));
+    _pathIx = Object.fromEntries(_pathList.map(x => [x.it.id, x]));
+    return _pathList;
   }
-  function pathItem(id) { return pathItems().find(x => x.it.id === id); }
+  function pathItem(id) { pathItems(); return _pathIx[id]; }
 
   /* מציג בדיוק את התוואים המבוקשים. neutral – כולם באותו צבע חיוור,
      כדי שהצבע לא יסגיר איזה תוואי הוא התשובה. */
@@ -631,12 +636,14 @@ const GameMap = (() => {
     return best;
   }
   function pathLen(item) {
+    if (!_pathLen) _pathLen = {};
+    if (_pathLen[item.id] != null) return _pathLen[item.id];
     let L = 0;
     for (let i = 1; i < item.path.length; i++) {
       const a = item.path[i - 1], b = item.path[i];
       L += Math.hypot(projX(b[0]) - projX(a[0]), projY(b[1]) - projY(a[1]));
     }
-    return L;
+    return (_pathLen[item.id] = L);
   }
   /* התוואי הקרוב ביותר ללחיצה, מתוך רשימה נתונה.
      הסף נדיב (כ-25 ק״מ) – התוואים מקורבים ממילא.
@@ -644,9 +651,8 @@ const GameMap = (() => {
      בוחרים את התוואי הספציפי – הקצר מביניהם. */
   function pathAt(lon, lat, ids, maxUnits = 230) {
     const cand = [];
-    (ids || pathItems().map(x => x.it.id)).forEach(id => {
-      const x = pathItem(id);
-      if (x) cand.push({ id, d: distToPath(lon, lat, x.it), len: pathLen(x.it) });
+    (ids ? ids.map(pathItem) : pathItems()).forEach(x => {
+      if (x) cand.push({ id: x.it.id, d: distToPath(lon, lat, x.it), len: pathLen(x.it) });
     });
     if (!cand.length) return null;
     const bd = Math.min(...cand.map(c => c.d));

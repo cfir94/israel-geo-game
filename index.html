@@ -45,6 +45,10 @@
       <div class="xp-txt"><span id="xp-label">דרגה 1</span><span id="xp-next">0 / 500 נק׳</span></div>
     </div>
 
+    <div class="home-extra" id="practice-row" hidden>
+      <button class="ghost-btn wide accent" id="btn-practice">🎯 תרגול טעויות <b id="miss-count">0</b></button>
+    </div>
+
     <h2 class="sec-title">בחרו אתגר</h2>
     <div class="modes" id="modes-grid"></div>
 
@@ -163,6 +167,11 @@
     <div class="map-shell atlas-map">
       <div class="map-host" id="atlas-host"></div>
     </div>
+    <label class="atlas-search">
+      <span aria-hidden="true">🔎</span>
+      <input type="search" id="atlas-search" placeholder="חיפוש אתר, נחל, דרך או מבנה…"
+             autocomplete="off" enterkeyhint="search">
+    </label>
     <div class="chips" id="atlas-chips"></div>
     <div class="legend" id="geo-legend" hidden></div>
     <div class="site-list" id="atlas-list"></div>
