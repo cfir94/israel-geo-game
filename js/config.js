@@ -14,6 +14,6 @@
    ============================================================= */
 
 const CLOUD = {
-  url: '',      // לדוגמה: 'https://abcdefghijkl.supabase.co'
-  anonKey: ''   // מפתח ה-anon public
+    url: "https://dendxtbaxiszohjjsdtd.supabase.co",
+    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlbmR4dGJheGlzem9oampzZHRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTMzMTcsImV4cCI6MjEwMjI2OTMxN30.rDYzH-3Pz2-XOYoUgrJW7GfTvdrZ7usqbSdtTZ4my6g",
 };
