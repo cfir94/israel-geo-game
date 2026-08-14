@@ -412,13 +412,23 @@ p { margin: 0; }
 
 /* --------------------------------------------- משוב ---- */
 .feedback {
-  min-height: 68px; border-radius: var(--r-md);
+  min-height: 74px; border-radius: var(--r-md);
   font-size: 13.5px; line-height: 1.5; overflow: hidden;
   padding: 11px 14px; background: transparent; border: 1px solid transparent;
   opacity: 0; transition: opacity .25s; cursor: pointer;
 }
 .feedback.on { opacity: 1; background: var(--card); border-color: var(--line); animation: screenIn .3s; }
-.feedback .go { float: inline-end; font-size: 11px; color: var(--txt-dim); font-weight: 700; }
+.fb-head { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+.fb-head b { flex: 1; margin: 0; }
+.fb-next {
+  flex: 0 0 auto; border: 0; border-radius: 99px;
+  padding: 9px 18px; font: inherit; font-weight: 800; font-size: 13.5px;
+  color: var(--on-accent); cursor: pointer;
+  background: linear-gradient(135deg, var(--teal), var(--blue));
+  box-shadow: 0 6px 16px -8px var(--teal);
+  transition: transform .14s;
+}
+.fb-next:active { transform: scale(.94); }
 .feedback b { display: block; margin-bottom: 3px; font-size: 14px; }
 .feedback.good b { color: var(--ok); }
 .feedback.bad b { color: var(--red); }

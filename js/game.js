@@ -806,15 +806,21 @@ function award(q, pts, ok, note) {
 
   if (q.site) SAVE.seen[q.site.id] = (SAVE.seen[q.site.id] || 0) + 1;
 
-  const fb = $('#feedback');
-  fb.className = 'feedback on ' + (ok ? 'good' : 'bad');
-  fb.innerHTML = `<span class="go">המשך ←</span>
-                  <b>${ok ? '✔ ' + (note || 'נכון!') : '✘ ' + (note || 'לא מדויק')}</b>
-                  <span>${q.explain || ''}</span>`;
-
   if (q.mapMode === 'geoProbe') revealGeoMap(q);
   maybeInjectGuide(q);
-  scheduleNext(ok ? 3200 : 4600);
+
+  /* אין מעבר אוטומטי – ההסבר נשאר על המסך עד שלוחצים "המשך",
+     כדי שיהיה זמן לקרוא אותו עד הסוף. */
+  const last = G.idx >= G.qs.length - 1;
+  const fb = $('#feedback');
+  fb.className = 'feedback on ' + (ok ? 'good' : 'bad');
+  fb.innerHTML =
+    `<div class="fb-head">
+       <b>${ok ? '✔ ' + (note || 'נכון!') : '✘ ' + (note || 'לא מדויק')}</b>
+       <button class="fb-next" id="fb-next">${last ? 'לסיכום ←' : 'המשך ←'}</button>
+     </div>
+     <span>${q.explain || ''}</span>`;
+  $('#fb-next').onclick = e => { e.stopPropagation(); advanceNow(); };
 }
 
 /* אחרי התשובה נחשפת המפה הגיאולוגית המלאה, והיעד מסומן בתוכה */
@@ -862,7 +868,8 @@ function maybeInjectGuide(q) {
   renderDots();
 }
 
-/* מעבר אוטומטי לשאלה הבאה, או מיידית בלחיצה על המשוב */
+/* המעבר לשאלה הבאה הוא ידני בלבד. scheduleNext משמש רק לדילוג,
+   שבו אין מה לקרוא. */
 let nextTimer = null;
 function scheduleNext(ms) {
   clearTimeout(nextTimer);
@@ -1544,7 +1551,12 @@ function bind() {
   };
 
   window.addEventListener('keydown', e => {
-    if (e.key === 'Escape') goHome();
+    if (e.key === 'Escape') { goHome(); return; }
+    if ((e.key === 'Enter' || e.key === ' ') && G && G.answered &&
+        $('#screen-play').classList.contains('active')) {
+      e.preventDefault();
+      advanceNow();
+    }
   });
 }
 
