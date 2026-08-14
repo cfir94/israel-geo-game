@@ -795,6 +795,20 @@ p { margin: 0; }
 .rock-legend span.hit { color: var(--txt); border-color: var(--teal); background: color-mix(in srgb, var(--teal) 14%, transparent); }
 .rock-legend i { width: 10px; height: 10px; border-radius: 3px; }
 
+/* ---------- דרכים עתיקות, נהרות ונחלים ---------- */
+.geo-path { transition: opacity .3s, stroke .25s, stroke-width .25s; }
+.geo-path.pk-route { stroke-dasharray: 11 8; }
+/* בשלב השאלה כל התוואים באותו צבע – ההבחנה היא בתוואי, לא בצבע */
+.geo-path.neutral { stroke: var(--txt-dim) !important; opacity: .8 !important; }
+.geo-path.correct { stroke-width: 6.5; filter: url(#f-glow); }
+.geo-path.wrong   { stroke: var(--red) !important; opacity: .85 !important; }
+
+/* שמות התוואים על המפה בשלב החשיפה */
+.pin-path .pin-dot { fill: var(--ok); }
+.pin-pathwrong .pin-dot { fill: var(--red); }
+.pin-path .pin-label, .pin-pathwrong .pin-label { font-size: 104px; stroke-width: 17px; }
+.pin-pathwrong .pin-label { fill: var(--red); }
+
 /* בשלב חשיפת המפה הגיאולוגית – פינוי מקום למפה */
 .geo-reveal .lifelines { display: none !important; }
 .geo-reveal .ans:not(.correct):not(.wrong) { display: none; }

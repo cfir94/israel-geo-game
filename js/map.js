@@ -221,6 +221,19 @@ const GameMap = (() => {
       });
     }
 
+    /* דרכים עתיקות ונחלים – מצוירים מראש ומוסתרים */
+    layers.paths = el('g', { class: 'lyr-paths' }, root);
+    pathItems().forEach(({ it, pk }) => {
+      const p = el('path', {
+        d: pathOf(it.path, false), fill: 'none', stroke: it.color,
+        'stroke-width': pk === 'route' ? 4.4 : 3.4,
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        'vector-effect': 'non-scaling-stroke',
+        class: 'geo-path pk-' + pk, 'data-path': it.id, 'data-pk': pk
+      }, layers.paths);
+      p.style.opacity = 0;
+    });
+
     layers.labels = el('g', { class: 'lyr-labels' }, root);
     layers.pins = el('g', { class: 'lyr-pins' }, root);
     layers.fx = el('g', { class: 'lyr-fx' }, root);
@@ -454,7 +467,7 @@ const GameMap = (() => {
 
   /* -------------------------------------------------- סיכות -- */
   function pin(opts) {
-    const { lat, lon, type = 'default', label = '', pulse = false, small = false } = opts;
+    const { lat, lon, type = 'default', label = '', pulse = false, small = false, labelDy = -84 } = opts;
     const k = markerScale();
     const g = el('g', {
       class: `pin pin-${type}` + (pulse ? ' pin-pulse' : ''),
@@ -466,7 +479,7 @@ const GameMap = (() => {
     el('circle', { r: small ? 30 : 50, class: 'pin-dot', filter: 'url(#f-glow)' }, g);
     el('circle', { r: small ? 12 : 19, class: 'pin-core' }, g);
     if (label) {
-      const t = el('text', { y: -84, class: 'pin-label', 'text-anchor': 'middle' }, g);
+      const t = el('text', { y: labelDy, class: 'pin-label', 'text-anchor': 'middle' }, g);
       t.textContent = label;
     }
     return g;
@@ -571,6 +584,90 @@ const GameMap = (() => {
     fitBounds(a.poly.map(([lo, la]) => ({ lat: la, lon: lo })), 0.15, animate);
   }
 
+  /* ------------------------------ דרכים, נהרות ונחלים -------- */
+  function pathItems() {
+    const a = (typeof ROUTES !== 'undefined' ? ROUTES : []).map(it => ({ it, pk: 'route' }));
+    const b = (typeof STREAMS !== 'undefined' ? STREAMS : []).map(it => ({ it, pk: 'stream' }));
+    return a.concat(b);
+  }
+  function pathItem(id) { return pathItems().find(x => x.it.id === id); }
+
+  /* מציג בדיוק את התוואים המבוקשים. neutral – כולם באותו צבע חיוור,
+     כדי שהצבע לא יסגיר איזה תוואי הוא התשובה. */
+  function showPaths(ids, neutral = false) {
+    const want = new Set(ids || []);
+    layers.paths.querySelectorAll('.geo-path').forEach(p => {
+      const on = want.has(p.dataset.path);
+      p.setAttribute('class', 'geo-path pk-' + p.dataset.pk + (neutral && on ? ' neutral' : ''));
+      p.style.opacity = on ? 1 : 0;
+    });
+  }
+  function hidePaths() { showPaths([]); }
+  function setPathState(id, state) {
+    const p = layers.paths.querySelector(`[data-path="${id}"]`);
+    if (!p) return;
+    p.setAttribute('class', 'geo-path pk-' + p.dataset.pk + (state ? ' ' + state : ''));
+    p.style.opacity = 1;
+  }
+
+  /* מרחק נקודה-מקטע במרחב המוקרן, ביחידות SVG */
+  function segDist(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const L = dx * dx + dy * dy;
+    let t = L ? ((px - ax) * dx + (py - ay) * dy) / L : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  }
+  function distToPath(lon, lat, item) {
+    const px = projX(lon), py = projY(lat);
+    let best = Infinity;
+    for (let i = 1; i < item.path.length; i++) {
+      const a = item.path[i - 1], b = item.path[i];
+      const d = segDist(px, py, projX(a[0]), projY(a[1]), projX(b[0]), projY(b[1]));
+      if (d < best) best = d;
+    }
+    return best;
+  }
+  function pathLen(item) {
+    let L = 0;
+    for (let i = 1; i < item.path.length; i++) {
+      const a = item.path[i - 1], b = item.path[i];
+      L += Math.hypot(projX(b[0]) - projX(a[0]), projY(b[1]) - projY(a[1]));
+    }
+    return L;
+  }
+  /* התוואי הקרוב ביותר ללחיצה, מתוך רשימה נתונה.
+     הסף נדיב (כ-25 ק״מ) – התוואים מקורבים ממילא.
+     ליד מפגש בין תוואים (יובל שנשפך לנהר, דרך שמסתעפת מדרך)
+     בוחרים את התוואי הספציפי – הקצר מביניהם. */
+  function pathAt(lon, lat, ids, maxUnits = 230) {
+    const cand = [];
+    (ids || pathItems().map(x => x.it.id)).forEach(id => {
+      const x = pathItem(id);
+      if (x) cand.push({ id, d: distToPath(lon, lat, x.it), len: pathLen(x.it) });
+    });
+    if (!cand.length) return null;
+    const bd = Math.min(...cand.map(c => c.d));
+    if (bd > maxUnits) return null;
+    /* הסף צר בכוונה: הכלל חל רק על חפיפה ממשית, לא על קרבה */
+    return cand.filter(c => c.d <= bd + 8).sort((a, b) => a.len - b.len)[0].id;
+  }
+  function pathMid(id) {
+    const x = pathItem(id);
+    if (!x) return null;
+    const p = x.it.path[Math.floor(x.it.path.length / 2)];
+    return { lat: p[1], lon: p[0] };
+  }
+  function fitPaths(ids, pad = 0.22, animate = true) {
+    const pts = [];
+    (ids || []).forEach(id => {
+      const x = pathItem(id);
+      if (x) x.it.path.forEach(([lo, la]) => pts.push({ lat: la, lon: lo }));
+    });
+    if (!pts.length) return fitAll(animate);
+    fitBounds(pts, pad, animate);
+  }
+
   function showRegionLabels(on) {
     layers.labels.innerHTML = '';
     if (!on) return;
@@ -596,6 +693,7 @@ const GameMap = (() => {
     showRegions, setRegionState, resetRegionStates, showRegionLabels,
     showGeology, setAreaState, resetAreaStates, areaAt, fitArea,
     probeArea, revealGeology, markArea,
+    showPaths, hidePaths, setPathState, pathAt, pathMid, fitPaths,
     setTap, haversine, regionCenters, refreshTheme,
     get svg() { return svg; },
     get layers() { return layers; }

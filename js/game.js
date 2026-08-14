@@ -218,6 +218,10 @@ MODES.push({ id: 'rockWhere', name: 'איפה הסלע הזה?', icon: '⛏️',
   desc: 'מקבלים יחידת סלע – ומאתרים על המפה אזור שבו היא חשופה. הדרך להפנים את המפה הגיאולוגית של הארץ.' });
 MODES.push({ id: 'geology', name: 'חידון גיאולוגי', icon: '🌋', color: '#8fc45c', tag: 'סלעים, קרקעות ומים',
   desc: 'קארסט, נארי, טרה רוסה מול רנדזינה, אקוויפרים, מכתשים ובזלת – הידע הגיאולוגי שנדרש בהסמכה.' });
+MODES.push({ id: 'routes', name: 'דרכים עתיקות', icon: '🐫', color: '#ffce4d', tag: 'דרך הים, דרך האבות ודרך המלך',
+  desc: 'דרכי המסחר ההיסטוריות של הארץ: לאתר את התוואי על המפה, לדעת איזה כביש מודרני רץ בו היום, ואיזה אתר שמר על המעבר.' });
+MODES.push({ id: 'streams', name: 'נחלים ומעיינות', icon: '💧', color: '#2b86b8', tag: 'הירדן, הנחלים והמקורות',
+  desc: 'הנהרות, הנחלים והמעיינות: איפה עובר כל נחל, מהו מקורו ולאן הוא נשפך – כולל שלושת מקורות הירדן.' });
 const MODE_BY_ID = Object.fromEntries(MODES.map(m => [m.id, m]));
 
 /* מצבים שמחולקים לרמות קושי לפי האתרים */
@@ -251,6 +255,7 @@ function targetsFor(diff) { return GEO_TARGETS.filter(t => t.t === diff); }
 /* כמה אתרים בכל שלב. כשמצב "שאלות הדרכה" פעיל, שלב מיקום מכיל
    פחות אתרים – כי כל אתר גורר אחריו שלוש שאלות נוספות. */
 function sitesPerLevel(mode) {
+  if (mode === 'routes' || mode === 'streams') return 6;
   if (mode === 'rockAt') return 6;
   if (mode === 'guide') return 3;
   if (mode === 'locate' && SAVE.guideQ) return 4;
@@ -269,6 +274,8 @@ function levelCount(mode, diff = 1) {
     case 'rockAt': return Math.ceil(GEO_AREAS.length / GAME_CONFIG.questionsPerLevel);
     case 'rockWhere': return 6;
     case 'geology': return Math.floor(GEO_TRIVIA.length / GAME_CONFIG.questionsPerLevel);
+    case 'routes': return pathLevels('routes');
+    case 'streams': return pathLevels('streams');
   }
   return 8;
 }
@@ -311,6 +318,79 @@ function guideQuestion(site, row, rnd) {
   };
 }
 function guideRowsFor(site) { return GUIDE_Q[site.id] || []; }
+
+/* ---------- דרכים עתיקות, נהרות ונחלים ---------- */
+function pathCenter(it) {
+  const n = it.path.length;
+  return [it.path.reduce((a, p) => a + p[0], 0) / n,
+          it.path.reduce((a, p) => a + p[1], 0) / n];
+}
+/* מסיחים אמיתיים: התוואים השכנים, כדי שההבחנה תהיה גיאוגרפית ולא מקרית */
+function pathDecoys(it, all, k = 4) {
+  const c = pathCenter(it);
+  return all.filter(x => x.id !== it.id)
+    .map(x => { const d = pathCenter(x); return { id: x.id, d: Math.hypot(d[0] - c[0], (d[1] - c[1]) * 1.2) }; })
+    .sort((a, b) => a.d - b.d).slice(0, k).map(x => x.id);
+}
+
+/* שאלת "איפה עובר התוואי" – התוואים מצוירים בצבע נייטרלי, ולוחצים על הנכון */
+function pathLocateQ(it, all, isRoute) {
+  const cand = shuffle([it.id, ...pathDecoys(it, all)], mulberry32(hashStr('pl' + it.id)));
+  const extra = isRoute
+    ? 'התוואי המודרני: ' + it.modern + '. ' + it.guards
+    : 'מקור: ' + it.src + ' · שפך: ' + it.out;
+  return {
+    kind: 'mapPath', showMap: true, mapMode: 'pathPick', time: 26,
+    pathKind: isRoute ? 'route' : 'stream',
+    targetPath: it.id, candidates: cand,
+    kicker: (isRoute ? '🐫 איפה עברה הדרך?' : '💧 איפה עובר הנחל?'),
+    text: it.name, sub: isRoute ? (it.alt || '') : (it.kind === 'river' ? 'נהר' : 'נחל'),
+    hint: { text: isRoute ? 'תקופה: ' + it.era : 'נשפך אל ' + it.out },
+    explain: it.name + ' – ' + it.note + ' ' + extra
+  };
+}
+
+/* שאלת ידע, ואחריה חשיפת התוואי על המפה */
+function pathFactQ(row, it, isRoute, rnd) {
+  const extra = isRoute
+    ? it.name + ' – ' + it.modern + '. ' + it.guards
+    : it.name + ' – מקור: ' + it.src + ', שפך: ' + it.out;
+  return {
+    kind: 'choice', showMap: true, mapMode: 'pathHidden', time: 24,
+    pathKind: isRoute ? 'route' : 'stream', revealPath: it.id,
+    kicker: isRoute ? '🐫 דרכים עתיקות' : '💧 נחלים ומעיינות',
+    text: row.q, sub: '',
+    options: shuffle([{ label: row.a, correct: true }, ...row.w.map(w => ({ label: w }))], rnd),
+    hint: { text: isRoute ? 'חשבו על התוואי בשטח: איפה נוח לעבור' : 'חשבו על הטופוגרפיה: לאן המים יורדים' },
+    explain: row.e + ' (' + extra + ')'
+  };
+}
+
+/* סדר קבוע: לומדים תוואי על המפה, ומיד נשאלים עליו */
+let _pathPools = {};
+function pathPool(mode) {
+  if (_pathPools[mode]) return _pathPools[mode];
+  const isRoute = mode === 'routes';
+  const all = isRoute ? ROUTES : STREAMS;
+  const rows = isRoute ? ROUTE_Q : STREAM_Q;
+  const key = isRoute ? 'r' : 's';
+  const out = [];
+  all.forEach(it => {
+    out.push(() => pathLocateQ(it, all, isRoute));
+    rows.filter(x => x[key] === it.id).forEach(row =>
+      out.push(rnd => pathFactQ(row, it, isRoute, rnd)));
+  });
+  return (_pathPools[mode] = out);
+}
+/* חלוקה אחידה לשלבים – בלי שלב אחרון קטוע */
+function pathLevels(mode) {
+  return Math.max(1, Math.round(pathPool(mode).length / sitesPerLevel(mode)));
+}
+function pathSlice(mode, level) {
+  const pool = pathPool(mode), lv = pathLevels(mode);
+  const l = Math.min(Math.max(1, level), lv);
+  return pool.slice(Math.floor((l - 1) * pool.length / lv), Math.floor(l * pool.length / lv));
+}
 
 function distractorSites(site, count, rnd) {
   const same = SITES.filter(s => s.r === site.r && s.id !== site.id);
@@ -453,6 +533,10 @@ function buildQuestions(mode, level, diff = 1) {
       hint: { text: 'חשבו על הסלע ועל מה שהוא עושה לנוף' },
       explain: t.a
     }));
+  }
+
+  if (mode === 'routes' || mode === 'streams') {
+    return pathSlice(mode, level).map(f => f(rnd));
   }
 
   if (mode === 'unesco') {
@@ -714,7 +798,22 @@ function renderQuestion() {
     GameMap.resetRegionStates();
 
     GameMap.showGeology(false);
-    if (q.mapMode === 'pinRegion') {
+    GameMap.hidePaths();
+    if (q.mapMode === 'pathPick') {
+      /* כל התוואים המועמדים באותו צבע חיוור – הצבע לא מסגיר את התשובה */
+      GameMap.showRegions(false);
+      GameMap.showRegionLabels(false);
+      GameMap.showPaths(q.candidates, true);
+      GameMap.fitPaths(q.candidates, 0.25, false);
+      GameMap.setTap(ll => onMapTapPath(ll));
+      $('#map-hud').innerHTML = '<span class="tag">👆 לחצו על הקו הנכון</span>';
+    } else if (q.mapMode === 'pathHidden') {
+      /* המפה נקייה בשלב השאלה; התוואי נחשף רק עם התשובה */
+      GameMap.showRegions(false);
+      GameMap.showRegionLabels(false);
+      GameMap.fitAll(false);
+      GameMap.setTap(null);
+    } else if (q.mapMode === 'pinRegion') {
       GameMap.showRegions(true, .3);
       GameMap.fitAround(q.site.lat, q.site.lon, 0.95, false);
       GameMap.showRegionLabels(true);
@@ -807,6 +906,7 @@ function award(q, pts, ok, note) {
   if (q.site) SAVE.seen[q.site.id] = (SAVE.seen[q.site.id] || 0) + 1;
 
   if (q.mapMode === 'geoProbe') revealGeoMap(q);
+  if (q.mapMode === 'pathHidden') revealPathMap(q);
   maybeInjectGuide(q);
 
   /* אין מעבר אוטומטי – ההסבר נשאר על המסך עד שלוחצים "המשך",
@@ -851,6 +951,101 @@ function revealGeoMap(q) {
   lg.innerHTML = seen.map(k =>
     `<span class="${k === q.rock ? 'hit' : ''}"><i style="background:${ROCKS[k].color}"></i>${ROCKS[k].name}</span>`
   ).join('');
+}
+
+/* ---------- חשיפת תוואי הדרך או הנחל ---------- */
+function pathItemOf(q) {
+  const id = q.revealPath || q.targetPath;
+  return q.pathKind === 'route' ? ROUTE_BY_ID[id] : STREAM_BY_ID[id];
+}
+function pathBook(q) { return q.pathKind === 'route' ? ROUTE_BY_ID : STREAM_BY_ID; }
+
+/* המקרא מתחת למפה. בשאלת איתור – שמות כל המועמדים, כדי שיישאר
+   בזיכרון מי מהם מי. בשאלת ידע – הפרטים על התוואי שנחשף. */
+function pathLegend(q, ids) {
+  const isRoute = q.pathKind === 'route';
+  const target = q.revealPath || q.targetPath;
+  const byId = pathBook(q);
+  const lg = $('#play-legend');
+  lg.hidden = false;
+  if (ids && ids.length > 1) {
+    /* התשובה ראשונה – המקרא נגלל, וכך היא תמיד בשדה הראייה */
+    lg.innerHTML = [target, ...ids.filter(id => id !== target)].map(id =>
+      `<span class="${id === target ? 'hit' : ''}"><i style="background:${byId[id].color}"></i>${byId[id].name}</span>`
+    ).join('');
+    return;
+  }
+  const it = byId[target];
+  const facts = isRoute
+    ? [['🛣️', it.modern], ['🏰', it.guards]]
+    : [['⛲', it.src], ['🌊', it.out]];
+  lg.innerHTML = `<span class="hit"><i style="background:${it.color}"></i>${it.name}</span>` +
+    facts.map(([ic, tx]) => `<span>${ic} ${tx}</span>`).join('');
+}
+
+/* מסמנים בשם רק את התוואי הנכון ואת זה שנבחר בטעות – שאר השמות
+   נמצאים במקרא, ועל המפה הם היו נופלים זה על זה ליד המפגשים.
+   כל תווית נתלית בנקודה הרחוקה ביותר מזו שכבר הונחה. */
+function labelPaths(q, ids) {
+  const byId = pathBook(q);
+  const target = q.revealPath || q.targetPath;
+  const order = [target, ...ids.filter(id => id !== target)];
+  const placed = [];
+  order.forEach((id, i) => {
+    const pts = byId[id].path.map(([lo, la]) => ({ lat: la, lon: lo }));
+    const inner = pts.length > 2 ? pts.slice(1, -1) : pts;
+    let best = inner[Math.floor(inner.length / 2)];
+    if (placed.length) {
+      let bd = -1;
+      inner.forEach(p => {
+        const d = Math.min(...placed.map(o => GameMap.haversine(p.lat, p.lon, o.lat, o.lon)));
+        if (d > bd) { bd = d; best = p; }
+      });
+    }
+    placed.push(best);
+    GameMap.pin({ lat: best.lat, lon: best.lon, small: true, label: byId[id].name,
+      type: id === target ? 'path' : 'pathwrong', labelDy: i % 2 ? 128 : -88 });
+  });
+}
+
+function revealPathMap(q) {
+  const it = pathItemOf(q);
+  if (!it) return;
+  $('#screen-play').classList.add('geo-reveal');
+  GameMap.showPaths([it.id]);
+  GameMap.setPathState(it.id, 'correct');
+  GameMap.clearPins();
+  labelPaths(q, [it.id]);
+  GameMap.fitPaths([it.id], 0.3, true);
+  $('#map-hud').innerHTML =
+    `<span class="tag"><i class="sw" style="background:${it.color}"></i>${it.name}</span>`;
+  pathLegend(q);
+}
+
+/* חשיפת שאלת האיתור: הנכון מודגש, הבחירה השגויה באדום, וכולם בשמם */
+function showPathAnswer(q, hit) {
+  const byId = pathBook(q);
+  GameMap.showPaths(q.candidates);
+  GameMap.setPathState(q.targetPath, 'correct');
+  if (hit && hit !== q.targetPath) GameMap.setPathState(hit, 'wrong');
+  GameMap.clearPins();
+  labelPaths(q, hit && hit !== q.targetPath ? [q.targetPath, hit] : [q.targetPath]);
+  $('#screen-play').classList.add('geo-reveal');
+  $('#map-hud').innerHTML =
+    `<span class="tag"><i class="sw" style="background:${byId[q.targetPath].color}"></i>${byId[q.targetPath].name}</span>`;
+  pathLegend(q, q.candidates);
+}
+
+/* לחיצה על אחד התוואים המועמדים */
+function onMapTapPath(ll) {
+  if (G.answered) return;
+  const q = G.qs[G.idx];
+  const hit = GameMap.pathAt(ll.lon, ll.lat, q.candidates);
+  if (!hit) { toast('לחצו על אחד הקווים שעל המפה'); return; }
+  const ok = hit === q.targetPath;
+  const byId = pathBook(q);
+  showPathAnswer(q, hit);
+  award(q, ok ? 100 : 0, ok, ok ? 'נכון – ' + byId[hit].name : 'זה ' + byId[hit].name);
 }
 
 /* אחרי מיקום על המפה – שלוש שאלות הדרכה על אותו אתר */
@@ -1007,6 +1202,9 @@ function timeUp() {
     GameMap.pin({ lat: q.target.lat, lon: q.target.lon, type: 'correct', label: q.site ? q.site.n : '' });
     $('#dock').classList.remove('on');
     award(q, 0, false, 'נגמר הזמן – לא הונחה סיכה');
+  } else if (q.kind === 'mapPath') {
+    showPathAnswer(q, null);
+    award(q, 0, false, 'נגמר הזמן! ' + pathBook(q)[q.targetPath].name);
   } else if (q.kind === 'geoArea') {
     GEO_AREAS.filter(a => a.rock === q.rock).forEach(a => GameMap.setAreaState(a.id, 'correct'));
     award(q, 0, false, 'נגמר הזמן! ' + ROCKS[q.rock].where);
