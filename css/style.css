@@ -798,6 +798,8 @@ p { margin: 0; }
 /* ---------- דרכים עתיקות, נהרות ונחלים ---------- */
 .geo-path { transition: opacity .3s, stroke .25s, stroke-width .25s; }
 .geo-path.pk-route { stroke-dasharray: 11 8; }
+/* ציר קמר/קער – קו מלא ועבה; תפר – קו מקווקו צפוף */
+.geo-path.pk-bound { stroke-dasharray: 7 5; }
 /* בשלב השאלה כל התוואים באותו צבע – ההבחנה היא בתוואי, לא בצבע */
 .geo-path.neutral { stroke: var(--txt-dim) !important; opacity: .8 !important; }
 .geo-path.correct { stroke-width: 6.5; filter: url(#f-glow); }

@@ -226,7 +226,7 @@ const GameMap = (() => {
     pathItems().forEach(({ it, pk }) => {
       const p = el('path', {
         d: pathOf(it.path, false), fill: 'none', stroke: it.color,
-        'stroke-width': pk === 'route' ? 4.4 : 3.4,
+        'stroke-width': pk === 'route' ? 4.4 : pk === 'fold' ? 5 : pk === 'bound' ? 4.6 : 3.4,
         'stroke-linecap': 'round', 'stroke-linejoin': 'round',
         'vector-effect': 'non-scaling-stroke',
         class: 'geo-path pk-' + pk, 'data-path': it.id, 'data-pk': pk
@@ -586,9 +586,11 @@ const GameMap = (() => {
 
   /* ------------------------------ דרכים, נהרות ונחלים -------- */
   function pathItems() {
-    const a = (typeof ROUTES !== 'undefined' ? ROUTES : []).map(it => ({ it, pk: 'route' }));
-    const b = (typeof STREAMS !== 'undefined' ? STREAMS : []).map(it => ({ it, pk: 'stream' }));
-    return a.concat(b);
+    const g = (src, pk) => (Array.isArray(src) ? src : []).map(it => ({ it, pk }));
+    return g(typeof ROUTES !== 'undefined' && ROUTES, 'route')
+      .concat(g(typeof STREAMS !== 'undefined' && STREAMS, 'stream'))
+      .concat(g(typeof FOLDS !== 'undefined' && FOLDS, 'fold'))
+      .concat(g(typeof BOUNDS !== 'undefined' && BOUNDS, 'bound'));
   }
   function pathItem(id) { return pathItems().find(x => x.it.id === id); }
 
@@ -658,13 +660,23 @@ const GameMap = (() => {
     const p = x.it.path[Math.floor(x.it.path.length / 2)];
     return { lat: p[1], lon: p[0] };
   }
-  function fitPaths(ids, pad = 0.22, animate = true) {
+  /* minSpanLat – חלון תצוגה מזערי במעלות רוחב. תוואי קצר לבדו
+     ממלא את המסך ומאבד כל הקשר, ולכן מרחיבים סביבו. */
+  function fitPaths(ids, pad = 0.22, animate = true, minSpanLat = 0) {
     const pts = [];
     (ids || []).forEach(id => {
       const x = pathItem(id);
       if (x) x.it.path.forEach(([lo, la]) => pts.push({ lat: la, lon: lo }));
     });
     if (!pts.length) return fitAll(animate);
+    if (minSpanLat) {
+      const las = pts.map(p => p.lat), los = pts.map(p => p.lon);
+      const lo0 = Math.min(...las), la1 = Math.max(...las);
+      if (la1 - lo0 < minSpanLat) {
+        return fitAround((lo0 + la1) / 2, (Math.min(...los) + Math.max(...los)) / 2,
+          minSpanLat, animate);
+      }
+    }
     fitBounds(pts, pad, animate);
   }
 

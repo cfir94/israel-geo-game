@@ -222,6 +222,10 @@ MODES.push({ id: 'routes', name: 'דרכים עתיקות', icon: '🐫', color:
   desc: 'דרכי המסחר ההיסטוריות של הארץ: לאתר את התוואי על המפה, לדעת איזה כביש מודרני רץ בו היום, ואיזה אתר שמר על המעבר.' });
 MODES.push({ id: 'streams', name: 'נחלים ומעיינות', icon: '💧', color: '#2b86b8', tag: 'הירדן, הנחלים והמקורות',
   desc: 'הנהרות, הנחלים והמעיינות: איפה עובר כל נחל, מהו מקורו ולאן הוא נשפך – כולל שלושת מקורות הירדן.' });
+MODES.push({ id: 'folds', name: 'קמר או קער?', icon: '⛰️', color: '#e0714a', tag: 'המבנה שמאחורי הנוף',
+  desc: 'צירי הקמרים והקערים שבונים את הארץ – חברון, רמאללה, פריעה, שכם, אמיר, הכרמל, החרמון והגולן. המבנה הוא שקובע איזה סלע יהיה בשטח, וכאן לומדים את הקשר – כולל היפוך התבליט בשומרון.' });
+MODES.push({ id: 'bounds', name: 'גבולות ותפרים', icon: '📐', color: '#c084fc', tag: 'מה מפריד בין חבל לחבל',
+  desc: 'איפה נגמר הגליל העליון ומתחיל התחתון, מה מפריד בין רמות מנשה לכרמל, ואיפה עובר קו פרשת המים. בדיוק השאלות שנשאלות בבחינה על גבולות חבלי הארץ.' });
 const MODE_BY_ID = Object.fromEntries(MODES.map(m => [m.id, m]));
 
 /* מצבים שמחולקים לרמות קושי לפי האתרים */
@@ -255,7 +259,7 @@ function targetsFor(diff) { return GEO_TARGETS.filter(t => t.t === diff); }
 /* כמה אתרים בכל שלב. כשמצב "שאלות הדרכה" פעיל, שלב מיקום מכיל
    פחות אתרים – כי כל אתר גורר אחריו שלוש שאלות נוספות. */
 function sitesPerLevel(mode) {
-  if (mode === 'routes' || mode === 'streams') return 6;
+  if (mode === 'routes' || mode === 'streams' || mode === 'folds' || mode === 'bounds') return 6;
   if (mode === 'rockAt') return 6;
   if (mode === 'guide') return 3;
   if (mode === 'locate' && SAVE.guideQ) return 4;
@@ -276,6 +280,8 @@ function levelCount(mode, diff = 1) {
     case 'geology': return Math.floor(GEO_TRIVIA.length / GAME_CONFIG.questionsPerLevel);
     case 'routes': return pathLevels('routes');
     case 'streams': return pathLevels('streams');
+    case 'folds': return pathLevels('folds');
+    case 'bounds': return pathLevels('bounds');
   }
   return 8;
 }
@@ -366,15 +372,130 @@ function pathFactQ(row, it, isRoute, rnd) {
   };
 }
 
+/* ---------- קמרים וקערים ---------- */
+/* שאלת האיתור מקבלת שם של מבנה ומבקשת את הציר שלו על המפה */
+function foldLocateQ(it, all) {
+  const cand = shuffle([it.id, ...pathDecoys(it, all)], mulberry32(hashStr('fl' + it.id)));
+  return {
+    kind: 'mapPath', showMap: true, mapMode: 'pathPick', time: 26,
+    pathKind: 'fold', targetPath: it.id, candidates: cand,
+    kicker: '⛰️ איפה עובר הציר?',
+    text: it.name, sub: it.unit,
+    hint: { text: it.where },
+    explain: it.name + ' – ' + it.where + '. מסלע: ' + it.rock + '. ' + it.note
+  };
+}
+/* "קמר או קער" – שתי אפשרויות בלבד, ולכן ההסבר הוא העיקר */
+function foldKindQ(it, rnd) {
+  const opts = [
+    { label: 'קמר – השכבות מתקמרות כלפי מעלה', correct: it.kind === 'anticline' },
+    { label: 'קער – השכבות שוקעות כלפי מטה', correct: it.kind === 'syncline' }
+  ];
+  return {
+    kind: 'choice', showMap: true, mapMode: 'pathHidden', time: 20,
+    pathKind: 'fold', revealPath: it.id,
+    kicker: '⛰️ קמר או קער?',
+    text: it.unit + ' – מה המבנה שמתחתיו?', sub: '',
+    options: shuffle(opts, rnd),
+    hint: { text: 'המסלע מסגיר: ' + it.rock },
+    explain: it.name + '. ' + it.note
+  };
+}
+/* מהמבנה לסלע – הקשר שהמשחק בא ללמד */
+function foldRockQ(it, all, rnd) {
+  /* כמה מבנים חולקים את אותו תיאור מסלע – מסננים כפילויות */
+  const seen = new Set([it.rock]);
+  const others = all.filter(x => {
+    if (x.id === it.id || seen.has(x.rock)) return false;
+    seen.add(x.rock); return true;
+  });
+  const wrong = shuffle(others, rnd).slice(0, 3).map(x => ({ label: x.rock }));
+  if (wrong.length < 3) return null;
+  return {
+    kind: 'choice', showMap: true, mapMode: 'pathHidden', time: 22,
+    pathKind: 'fold', revealPath: it.id,
+    kicker: '⛰️ מבנה ומסלע',
+    text: 'איזה מסלע אופייני ל' + it.unit + '?', sub: '',
+    options: shuffle([{ label: it.rock, correct: true }, ...wrong], rnd),
+    hint: { text: it.kind === 'anticline' ? 'זהו קמר – ובקמר נחשפות השכבות הקדומות' : 'זהו קער – ובקער נשמרות השכבות הצעירות' },
+    explain: it.name + ' – ' + it.rock + '. ' + it.note
+  };
+}
+
+/* ---------- גבולות ותפרים ---------- */
+/* "ל" לפני שם מיודע בולעת את ה"א הידיעה: "הגליל" → "לגליל" */
+const leh = s => s[0] === 'ה' ? 'ל' + s.slice(1) : 'ל' + s;
+const between = it => 'בין ' + it.a + ' ' + leh(it.b);
+
+function boundLocateQ(it, all) {
+  const cand = shuffle([it.id, ...pathDecoys(it, all)], mulberry32(hashStr('bl' + it.id)));
+  return {
+    kind: 'mapPath', showMap: true, mapMode: 'pathPick', time: 26,
+    pathKind: 'bound', targetPath: it.id, candidates: cand,
+    kicker: '📐 איפה עובר התפר?',
+    text: it.name, sub: between(it),
+    hint: { text: 'מפריד ' + between(it) },
+    explain: it.name + ' – מפריד ' + between(it) + '. ' + it.note
+  };
+}
+/* "מה מפריד בין X ל-Y" – המסיחים הם תפרים אחרים */
+function boundWhatQ(it, all, rnd) {
+  const wrong = shuffle(all.filter(x => x.id !== it.id), rnd).slice(0, 3).map(x => ({ label: x.name }));
+  return {
+    kind: 'choice', showMap: true, mapMode: 'pathHidden', time: 22,
+    pathKind: 'bound', revealPath: it.id,
+    kicker: '📐 מה מפריד ביניהם?',
+    text: 'מה מפריד ' + between(it) + '?', sub: '',
+    options: shuffle([{ label: it.name, correct: true }, ...wrong], rnd),
+    hint: { text: 'חשבו על הקו בשטח – בקעה, נחל או מתלול' },
+    explain: it.note
+  };
+}
+/* תפר שכבר יש עליו שאלה כתובה ביד – לא מייצרים לו שאלה אוטומטית */
+function boundHasWritten(it) {
+  return STRUCT_Q.some(r => r.b === it.id && r.a === it.name);
+}
+
+/* שאלת ידע על המבנה או על התפר, עם חשיפת הקו על המפה */
+function structFactQ(row, rnd) {
+  const it = row.f ? FOLD_BY_ID[row.f] : row.b ? BOUND_BY_ID[row.b] : null;
+  return {
+    kind: 'choice', showMap: !!it, mapMode: it ? 'pathHidden' : undefined, time: 24,
+    pathKind: row.f ? 'fold' : 'bound', revealPath: it ? it.id : undefined,
+    kicker: row.f ? '⛰️ מבנה גיאולוגי' : '📐 גבולות ותפרים',
+    text: row.q, sub: '',
+    options: shuffle([{ label: row.a, correct: true }, ...row.w.map(w => ({ label: w }))], rnd),
+    hint: { text: row.f ? 'קמר חושף שכבות קדומות, קער שומר שכבות צעירות' : 'הגבולות בשטח הם בקעות, נחלים ומתלולים' },
+    explain: row.e
+  };
+}
+
 /* סדר קבוע: לומדים תוואי על המפה, ומיד נשאלים עליו */
 let _pathPools = {};
 function pathPool(mode) {
   if (_pathPools[mode]) return _pathPools[mode];
+  const out = [];
+  if (mode === 'folds') {
+    FOLDS.forEach(it => {
+      out.push(() => foldLocateQ(it, FOLDS));
+      out.push(rnd => foldKindQ(it, rnd));
+      if (foldRockQ(it, FOLDS, mulberry32(1))) out.push(rnd => foldRockQ(it, FOLDS, rnd));
+    });
+    STRUCT_Q.filter(r => r.f || (!r.f && !r.b)).forEach(r => out.push(rnd => structFactQ(r, rnd)));
+    return (_pathPools[mode] = out);
+  }
+  if (mode === 'bounds') {
+    BOUNDS.forEach(it => {
+      out.push(() => boundLocateQ(it, BOUNDS));
+      if (!boundHasWritten(it)) out.push(rnd => boundWhatQ(it, BOUNDS, rnd));
+    });
+    STRUCT_Q.filter(r => r.b).forEach(r => out.push(rnd => structFactQ(r, rnd)));
+    return (_pathPools[mode] = out);
+  }
   const isRoute = mode === 'routes';
   const all = isRoute ? ROUTES : STREAMS;
   const rows = isRoute ? ROUTE_Q : STREAM_Q;
   const key = isRoute ? 'r' : 's';
-  const out = [];
   all.forEach(it => {
     out.push(() => pathLocateQ(it, all, isRoute));
     rows.filter(x => x[key] === it.id).forEach(row =>
@@ -535,7 +656,7 @@ function buildQuestions(mode, level, diff = 1) {
     }));
   }
 
-  if (mode === 'routes' || mode === 'streams') {
+  if (mode === 'routes' || mode === 'streams' || mode === 'folds' || mode === 'bounds') {
     return pathSlice(mode, level).map(f => f(rnd));
   }
 
@@ -956,14 +1077,27 @@ function revealGeoMap(q) {
 /* ---------- חשיפת תוואי הדרך או הנחל ---------- */
 function pathItemOf(q) {
   const id = q.revealPath || q.targetPath;
-  return q.pathKind === 'route' ? ROUTE_BY_ID[id] : STREAM_BY_ID[id];
+  if (!id || !PATH_BOOKS[q.pathKind]) return null;
+  return pathBook(q)[id];
 }
-function pathBook(q) { return q.pathKind === 'route' ? ROUTE_BY_ID : STREAM_BY_ID; }
+const PATH_BOOKS = {
+  route: () => ROUTE_BY_ID, stream: () => STREAM_BY_ID,
+  fold: () => FOLD_BY_ID, bound: () => BOUND_BY_ID
+};
+function pathBook(q) { return PATH_BOOKS[q.pathKind](); }
+
+/* הפרטים שמלווים כל סוג תוואי במקרא */
+function pathFacts(kind, it) {
+  if (kind === 'route') return [['🛣️', it.modern], ['🏰', it.guards]];
+  if (kind === 'stream') return [['⛲', it.src], ['🌊', it.out]];
+  if (kind === 'fold') return [[it.kind === 'anticline' ? '⛰️' : '🥣', it.kind === 'anticline' ? 'קמר' : 'קער'],
+                               ['🪨', it.rock]].concat(it.peak ? [['📏', it.peak]] : []);
+  return [['◀', it.a], ['▶', it.b]];
+}
 
 /* המקרא מתחת למפה. בשאלת איתור – שמות כל המועמדים, כדי שיישאר
    בזיכרון מי מהם מי. בשאלת ידע – הפרטים על התוואי שנחשף. */
 function pathLegend(q, ids) {
-  const isRoute = q.pathKind === 'route';
   const target = q.revealPath || q.targetPath;
   const byId = pathBook(q);
   const lg = $('#play-legend');
@@ -976,11 +1110,8 @@ function pathLegend(q, ids) {
     return;
   }
   const it = byId[target];
-  const facts = isRoute
-    ? [['🛣️', it.modern], ['🏰', it.guards]]
-    : [['⛲', it.src], ['🌊', it.out]];
   lg.innerHTML = `<span class="hit"><i style="background:${it.color}"></i>${it.name}</span>` +
-    facts.map(([ic, tx]) => `<span>${ic} ${tx}</span>`).join('');
+    pathFacts(q.pathKind, it).filter(f => f[1]).map(([ic, tx]) => `<span>${ic} ${tx}</span>`).join('');
 }
 
 /* מסמנים בשם רק את התוואי הנכון ואת זה שנבחר בטעות – שאר השמות
@@ -1016,7 +1147,9 @@ function revealPathMap(q) {
   GameMap.setPathState(it.id, 'correct');
   GameMap.clearPins();
   labelPaths(q, [it.id]);
-  GameMap.fitPaths([it.id], 0.3, true);
+  /* קמר או תפר בודד קצר מדי כדי למלא את המסך – משאירים הקשר ארצי */
+  const wide = q.pathKind === 'fold' || q.pathKind === 'bound' ? 2.4 : 0;
+  GameMap.fitPaths([it.id], 0.3, true, wide);
   $('#map-hud').innerHTML =
     `<span class="tag"><i class="sw" style="background:${it.color}"></i>${it.name}</span>`;
   pathLegend(q);
