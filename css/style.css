@@ -346,7 +346,7 @@ p { margin: 0; }
 .map-host { position: absolute; inset: 0; }
 .map-host svg.gamemap { width: 100%; height: 100%; display: block; touch-action: manipulation; }
 .map-hud {
-  position: absolute; inset-block-end: 10px; inset-inline: 10px;
+  position: absolute; inset-block-end: 8px; inset-inline: 8px;
   display: flex; gap: 8px; justify-content: center; pointer-events: none;
 }
 .map-hud .tag {
@@ -754,3 +754,38 @@ p { margin: 0; }
 .rock-card { display: grid; gap: 9px; }
 .rock-row { display: flex; gap: 9px; font-size: 13.5px; line-height: 1.55; }
 .rock-row b { flex: 0 0 68px; color: var(--txt-dim); font-weight: 700; font-size: 12.5px; padding-top: 1px; }
+
+/* ---------- שלב השאלה: היעד מודגש בלי לחשוף את צבע הסלע ---------- */
+.geo-area.probe {
+  fill: var(--teal) !important; stroke: var(--teal) !important;
+  stroke-width: 3 !important;
+  animation: probePulse 1.8s ease-in-out infinite;
+}
+@keyframes probePulse { 50% { opacity: .55 !important; } }
+.geo-area.found {
+  stroke: #fff !important; stroke-width: 3.5 !important;
+  filter: brightness(1.12) drop-shadow(0 0 6px rgba(0,0,0,.5));
+}
+.probe-pin .pin-dot { fill: var(--teal); }
+
+/* מקרא קומפקטי מתחת למפה בשלב החשיפה */
+.rock-legend {
+  display: flex; flex: 0 0 auto; gap: 5px; margin-bottom: 10px;
+  overflow-x: auto; scrollbar-width: none; padding-bottom: 2px;
+}
+.rock-legend::-webkit-scrollbar { display: none; }
+.rock-legend span { flex: 0 0 auto; }
+.map-hud .tag i.sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; margin-inline-end: 5px; vertical-align: -1px; }
+.rock-legend span {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 700; color: var(--txt-dim);
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 99px; padding: 3px 9px;
+}
+.rock-legend span.hit { color: var(--txt); border-color: var(--teal); background: color-mix(in srgb, var(--teal) 14%, transparent); }
+.rock-legend i { width: 10px; height: 10px; border-radius: 3px; }
+
+/* בשלב חשיפת המפה הגיאולוגית – פינוי מקום למפה */
+.geo-reveal .lifelines { display: none !important; }
+.geo-reveal .ans:not(.correct):not(.wrong) { display: none; }
+.geo-reveal .map-shell { min-height: 46vh; }

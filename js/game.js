@@ -212,8 +212,8 @@ const MODES = [
 ];
 MODES.push({ id: 'guide', name: 'סדנת הדרכה', icon: '🎤', color: '#f0abfc', tag: 'מה מספרים בכל אתר',
   desc: 'שלוש שאלות על כל אתר: מה עושים שם, מה נקודת ההדרכה, ומה חשוב לדעת מהשטח.' });
-MODES.push({ id: 'rockAt', name: 'איזה סלע כאן?', icon: '🪨', color: '#3f8fd0', tag: 'אזור על המפה → הסלע שבו',
-  desc: 'אזור מסומן על המפה הגיאולוגית – ואתם מזהים איזה סלע חשוף בו. בדיוק השאלה שנשאלת בבחינה: "מה הסלע בחרמון? ברמות מנשה?"' });
+MODES.push({ id: 'rockAt', name: 'איזה סלע כאן?', icon: '🪨', color: '#A6D84A', tag: 'מקום על המפה → הסלע שבו',
+  desc: 'מקום מודגש על מפת ישראל – ואתם בוחרים איזה סלע יש שם. אחרי התשובה נחשפת המפה הגיאולוגית המלאה בצבעי התקן, והמקום שנשאלתם עליו מסומן בתוכה. שלוש רמות: אזורי הארץ, מקומות מפורסמים, ואתרים ספציפיים.' });
 MODES.push({ id: 'rockWhere', name: 'איפה הסלע הזה?', icon: '⛏️', color: '#d4694a', tag: 'יחידת סלע → האזור במפה',
   desc: 'מקבלים יחידת סלע – ומאתרים על המפה אזור שבו היא חשופה. הדרך להפנים את המפה הגיאולוגית של הארץ.' });
 MODES.push({ id: 'geology', name: 'חידון גיאולוגי', icon: '🌋', color: '#8fc45c', tag: 'סלעים, קרקעות ומים',
@@ -221,7 +221,7 @@ MODES.push({ id: 'geology', name: 'חידון גיאולוגי', icon: '🌋', c
 const MODE_BY_ID = Object.fromEntries(MODES.map(m => [m.id, m]));
 
 /* מצבים שמחולקים לרמות קושי לפי האתרים */
-const BY_DIFF = new Set(['locate', 'identify', 'regionOf', 'guide']);
+const BY_DIFF = new Set(['locate', 'identify', 'regionOf', 'guide', 'rockAt']);
 const DIFFS = [
   { id: 1, name: 'קל',     sub: 'אתרי חובה' },
   { id: 2, name: 'בינוני', sub: 'הרחבה' },
@@ -246,16 +246,19 @@ const POOL = SITES.slice().sort((a, b) =>
   (a.lvl - b.lvl) || (hashStr(a.id) - hashStr(b.id)));
 
 function poolFor(diff) { return POOL.filter(s => s.lvl === diff); }
+function targetsFor(diff) { return GEO_TARGETS.filter(t => t.t === diff); }
 
 /* כמה אתרים בכל שלב. כשמצב "שאלות הדרכה" פעיל, שלב מיקום מכיל
    פחות אתרים – כי כל אתר גורר אחריו שלוש שאלות נוספות. */
 function sitesPerLevel(mode) {
+  if (mode === 'rockAt') return 6;
   if (mode === 'guide') return 3;
   if (mode === 'locate' && SAVE.guideQ) return 4;
   return GAME_CONFIG.questionsPerLevel;
 }
 
 function levelCount(mode, diff = 1) {
+  if (mode === 'rockAt') return Math.max(1, Math.ceil(targetsFor(diff).length / sitesPerLevel(mode)));
   if (BY_DIFF.has(mode)) {
     return Math.max(1, Math.min(12, Math.floor(poolFor(diff).length / sitesPerLevel(mode))));
   }
@@ -403,19 +406,23 @@ function buildQuestions(mode, level, diff = 1) {
   }
 
   if (mode === 'rockAt') {
-    const areas = shuffle(GEO_AREAS, mulberry32(hashStr('rockAt'))).slice((level - 1) * n, (level - 1) * n + n);
-    const list = areas.length ? areas : GEO_AREAS.slice(0, n);
-    return list.map(a => {
-      const right = ROCKS[a.rock];
-      const wrong = shuffle(Object.keys(ROCKS).filter(k => k !== a.rock), rnd).slice(0, 3);
+    const per = sitesPerLevel('rockAt');
+    const pool = shuffle(targetsFor(diff), mulberry32(hashStr('rockAt#' + diff)));
+    let list = pool.slice((level - 1) * per, (level - 1) * per + per);
+    if (!list.length) list = pool.slice(0, per);
+    return list.map(t => {
+      const rockKey = t.area ? AREA_BY_ID[t.area].rock : t.rock;
+      const right = ROCKS[rockKey];
+      const wrong = shuffle(Object.keys(ROCKS).filter(k => k !== rockKey), rnd).slice(0, 3);
+      const note = t.note || (t.area ? AREA_BY_ID[t.area].note : '');
       return {
-        kind: 'choice', showMap: true, mapMode: 'geoArea', area: a, time: 22,
-        kicker: '🪨 איזה סלע כאן?',
-        text: a.name, sub: 'האזור המודגש על המפה',
+        kind: 'choice', showMap: true, mapMode: 'geoProbe', target: t, rock: rockKey, time: 24,
+        kicker: '🪨 איזה סלע יש כאן?',
+        text: t.name, sub: t.area ? 'האזור המודגש על המפה' : 'הנקודה המודגשת על המפה',
         options: shuffle([{ label: right.name, correct: true },
           ...wrong.map(k => ({ label: ROCKS[k].name }))], rnd),
-        hint: { text: right.age },
-        explain: a.name + ' – ' + right.name + ' (' + right.group + '). ' + a.note
+        hint: { text: 'התקופה: ' + right.period },
+        explain: t.name + ' – ' + right.name + ' (' + right.group + ', ' + right.period + '). ' + note
       };
     });
   }
@@ -687,6 +694,8 @@ function renderQuestion() {
   $('#feedback').className = 'feedback';
   $('#feedback').innerHTML = '';
   $('#map-hud').innerHTML = '';
+  $('#play-legend').hidden = true;
+  $('#screen-play').classList.remove('geo-reveal');
 
   $$('.ll').forEach(b => {
     b.classList.remove('used');
@@ -711,13 +720,19 @@ function renderQuestion() {
       GameMap.showRegionLabels(true);
       GameMap.pin({ lat: q.site.lat, lon: q.site.lon, type: 'target', pulse: true });
       GameMap.setTap(null);
-    } else if (q.mapMode === 'geoArea') {
+    } else if (q.mapMode === 'geoProbe') {
+      /* שלב השאלה: המפה נייטרלית לגמרי – רק היעד מודגש, כדי
+         שצבע הסלע לא יסגיר את התשובה. */
       GameMap.showRegions(false);
       GameMap.showRegionLabels(false);
-      GameMap.showGeology(true, .18);
       GameMap.resetAreaStates();
-      GameMap.setAreaState(q.area.id, 'correct');
+      GameMap.showGeology(false);
       GameMap.fitAll(false);
+      if (q.target.area) {
+        GameMap.probeArea(q.target.area);
+      } else {
+        GameMap.pin({ lat: q.target.lat, lon: q.target.lon, type: 'probe', pulse: true, label: q.target.name });
+      }
       GameMap.setTap(null);
     } else if (q.mapMode === 'geoBlank') {
       GameMap.showRegions(false);
@@ -797,8 +812,39 @@ function award(q, pts, ok, note) {
                   <b>${ok ? '✔ ' + (note || 'נכון!') : '✘ ' + (note || 'לא מדויק')}</b>
                   <span>${q.explain || ''}</span>`;
 
+  if (q.mapMode === 'geoProbe') revealGeoMap(q);
   maybeInjectGuide(q);
-  scheduleNext(ok ? 2000 : 3400);
+  scheduleNext(ok ? 3200 : 4600);
+}
+
+/* אחרי התשובה נחשפת המפה הגיאולוגית המלאה, והיעד מסומן בתוכה */
+function revealGeoMap(q) {
+  /* בשלב החשיפה מפנים מקום למפה: קווי החיים והאפשרויות שלא
+     נבחרו מתקפלים, כדי שהמפה הגיאולוגית תהיה גדולה וקריאה. */
+  $('#screen-play').classList.add('geo-reveal');
+  /* המפה הגיאולוגית המלאה של הארץ, והיעד מודגש בתוכה */
+  GameMap.revealGeology(0.85);
+  if (q.target.area) {
+    GameMap.markArea(q.target.area);
+  } else {
+    GameMap.clearPins();
+    const id = GameMap.areaAt(q.target.lon, q.target.lat);
+    if (id) GameMap.markArea(id);
+    GameMap.pin({ lat: q.target.lat, lon: q.target.lon, type: 'correct', label: q.target.name });
+  }
+  GameMap.fitAll(true);
+
+  const r = ROCKS[q.rock];
+  $('#map-hud').innerHTML =
+    `<span class="tag"><i class="sw" style="background:${r.color}"></i>${r.name}</span>`;
+
+  /* המקרא המלא יושב מתחת למפה ולא מסתיר אותה */
+  const seen = [...new Set(GEO_AREAS.map(a => a.rock))];
+  const lg = $('#play-legend');
+  lg.hidden = false;
+  lg.innerHTML = seen.map(k =>
+    `<span class="${k === q.rock ? 'hit' : ''}"><i style="background:${ROCKS[k].color}"></i>${ROCKS[k].name}</span>`
+  ).join('');
 }
 
 /* אחרי מיקום על המפה – שלוש שאלות הדרכה על אותו אתר */

@@ -517,10 +517,12 @@ const GameMap = (() => {
   }
 
   /* ---------------------------------------- שכבה גיאולוגית -- */
-  let geoOp = 0.6;
+  let geoOp = 0.6, geoVisible = false;
   function showGeology(on, opacity = 0.6) {
     geoOp = opacity;
+    geoVisible = !!on;
     layers.geo.querySelectorAll('.geo-area').forEach(p => {
+      p.setAttribute('class', 'geo-area');
       p.style.opacity = on ? opacity : 0;
     });
   }
@@ -530,12 +532,34 @@ const GameMap = (() => {
     p.setAttribute('class', 'geo-area ' + (state || ''));
     p.style.opacity = state ? 0.92 : geoOp;
   }
+  /* מכבד את מצב התצוגה: כשהשכבה מוסתרת, האיפוס לא מחזיר אותה */
   function resetAreaStates() {
     layers.geo.querySelectorAll('.geo-area').forEach(p => {
       p.setAttribute('class', 'geo-area');
-      p.style.opacity = geoOp;
+      p.style.opacity = geoVisible ? geoOp : 0;
     });
   }
+  /* הדגשת יעד בלי לחשוף את צבע הסלע – לשלב השאלה */
+  function probeArea(id) {
+    const p = layers.geo.querySelector(`[data-area="${id}"]`);
+    if (!p) return;
+    p.setAttribute('class', 'geo-area probe');
+    p.style.opacity = 1;
+  }
+  function revealGeology(opacity = 0.85) {
+    geoVisible = true; geoOp = opacity;
+    layers.geo.querySelectorAll('.geo-area').forEach(p => {
+      if (!p.classList.contains('probe-done')) p.setAttribute('class', 'geo-area');
+      p.style.opacity = opacity;
+    });
+  }
+  function markArea(id) {
+    const p = layers.geo.querySelector(`[data-area="${id}"]`);
+    if (!p) return;
+    p.setAttribute('class', 'geo-area found probe-done');
+    p.style.opacity = 1;
+  }
+
   function areaAt(lon, lat) {
     for (const a of GEO_AREAS) if (pointInPoly(lon, lat, a.poly)) return a.id;
     for (const a of GEO_AREAS) if (a._poly && pointInPoly(lon, lat, a._poly)) return a.id;
@@ -571,6 +595,7 @@ const GameMap = (() => {
     regionAt, onLand, pin, line, clearPins,
     showRegions, setRegionState, resetRegionStates, showRegionLabels,
     showGeology, setAreaState, resetAreaStates, areaAt, fitArea,
+    probeArea, revealGeology, markArea,
     setTap, haversine, regionCenters, refreshTheme,
     get svg() { return svg; },
     get layers() { return layers; }
