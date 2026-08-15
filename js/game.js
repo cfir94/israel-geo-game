@@ -621,8 +621,8 @@ function buildQuestions(mode, level, diff = 1) {
         kind: 'choice', showMap: true, mapMode: 'geoProbe', target: t, rock: rockKey, time: 24,
         kicker: '🪨 איזה סלע יש כאן?',
         text: t.name, sub: t.area ? 'האזור המודגש על המפה' : 'הנקודה המודגשת על המפה',
-        options: shuffle([{ label: right.name, correct: true },
-          ...wrong.map(k => ({ label: ROCKS[k].name }))], rnd),
+        options: shuffle([{ label: right.name, correct: true, rk: rockKey },
+          ...wrong.map(k => ({ label: ROCKS[k].name, rk: k }))], rnd),
         hint: { text: 'התקופה: ' + right.period },
         explain: t.name + ' – ' + right.name + ' (' + right.group + ', ' + right.period + '). ' + note
       };
@@ -1291,6 +1291,16 @@ function answerChoice(btn, opt) {
     btn.classList.add('wrong');
     all.forEach((b, i) => { if (q.options[i].correct) b.classList.add('correct'); });
     const right = q.options.find(o => o.correct).label;
+    /* בחירה מאותה משפחת סלעים – הבחנה אמיתית שמגיע לה הסבר */
+    if (opt.rk && q.rock && ROCKS[opt.rk].family === ROCKS[q.rock].family &&
+        familySize(ROCKS[q.rock].family) <= 3) {
+      const got = ROCKS[opt.rk], want = ROCKS[q.rock];
+      q.explain = 'שתיהן ' + FAMILY[got.family].plural + ', וההבדל הוא בסוג: ' +
+        got.name + ' – ' + got.group + '; ואילו כאן ' + want.name + ' – ' + want.group +
+        '. ' + want.traits;
+      award(q, 0, false, 'כמעט – גם ' + got.name + ' היא ' + FAMILY[got.family].single);
+      return;
+    }
     award(q, 0, false, 'התשובה: ' + right);
   }
 }
@@ -1381,15 +1391,31 @@ function onMapTapArea(ll) {
   const q = G.qs[G.idx];
   const hit = GameMap.areaAt(ll.lon, ll.lat);
   if (!hit) { toast('לחצו בתוך שטח המפה'); return; }
+  const got = ROCKS[AREA_BY_ID[hit].rock], want = ROCKS[q.rock];
   const ok = AREA_BY_ID[hit].rock === q.rock;
   /* מדגישים את כל האזורים שבהם הסלע הזה חשוף */
   GEO_AREAS.filter(a => a.rock === q.rock).forEach(a => GameMap.setAreaState(a.id, 'correct'));
   if (!ok) GameMap.setAreaState(hit, 'wrong');
-  $('#map-hud').innerHTML = `<span class="tag">${ROCKS[q.rock].name}</span>`;
+  $('#map-hud').innerHTML = `<span class="tag">${want.name}</span>`;
+
+  /* תשובה מאותה משפחת סלעים היא הבחנה אמיתית ולא ניחוש – מגיע לה
+     הסבר מה בדיוק ההבדל. רלוונטי רק למשפחה מצומצמת: "סלע משקע"
+     מכסה כמעט הכול ואינו אומר דבר. */
+  const near = !ok && got.family === want.family && familySize(want.family) <= 3;
+  if (near) q.explain = 'שתי היחידות הן ' + FAMILY[got.family].plural +
+    ', וההבדל הוא בסוג: ב' + AREA_BY_ID[hit].name + ' יש ' + got.name +
+    ' – ' + got.group + '; והתשובה כאן היא ' + want.name + ' – ' + want.group + '. ' + want.traits;
+
   award(q, ok ? 100 : 0, ok,
     ok ? 'נכון – ' + AREA_BY_ID[hit].name
-       : 'ב' + AREA_BY_ID[hit].name + ' יש ' + ROCKS[AREA_BY_ID[hit].rock].name);
+       : near ? 'כמעט – גם ' + got.name + ' היא ' + FAMILY[got.family].single
+              : 'ב' + AREA_BY_ID[hit].name + ' יש ' + got.name);
 }
+const FAMILY = {
+  magmatic: { single: 'סלע מגמתי', plural: 'סלעים מגמתיים' },
+  sediment: { single: 'סלע משקע', plural: 'סלעי משקע' }
+};
+function familySize(f) { return Object.values(ROCKS).filter(r => r.family === f).length; }
 
 function timeUp() {
   const q = G.qs[G.idx];
