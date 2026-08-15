@@ -2013,11 +2013,14 @@ async function refreshClassCards(force) {
 }
 function paintClassCards() {
   const w = classCache.week || { members: 0, active: 0, questions: 0 };
-  const goal = classGoal(w.members);
+  /* היעד לפי מי שתרגל בפועל. מציגים כמה תרגלו בלי "מתוך 37" –
+     שבר עם מכנה גדול קורא כמו כישלון גם בשבוע שדווקא היה טוב. */
+  const goal = classGoal(w.active);
+  const act = w.active || 0;
   const pct = Math.min(100, Math.round(100 * (w.questions || 0) / goal));
   $('#cc-fill').style.width = pct + '%';
   $('#cc-txt').innerHTML = `<b>${w.questions || 0}</b> מתוך <b>${goal}</b> שאלות השבוע · ` +
-    `${w.active || 0} מתוך ${w.members || 0} תרגלו` +
+    (act === 0 ? 'עוד לא תרגלו השבוע' : act === 1 ? 'אחד תרגל השבוע' : `${act} תרגלו השבוע`) +
     (pct >= 100 ? ' · <b>היעד הושג! 🎉</b>' : '');
 
   const rows = (classCache.board || []).slice(0, 3);
