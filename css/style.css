@@ -238,8 +238,19 @@ p { margin: 0; }
   background: linear-gradient(140deg, color-mix(in srgb, var(--teal) 26%, transparent), color-mix(in srgb, var(--blue) 20%, transparent));
   border: 1px solid color-mix(in srgb, var(--teal) 35%, transparent);
   box-shadow: 0 12px 30px -14px var(--teal);
+  overflow: hidden;
 }
-.brand h1 { font-size: 25px; background: linear-gradient(100deg,var(--title-1),var(--title-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* כשיש אייקון אמיתי הוא ממלא את הריבוע – בלי מדרג ובלי מסגרת
+   שיתחרו באיור עצמו. הזוהר נשאר, הוא חלק מהכותרת. */
+.brand-mark.has-img { background: none; border: 0; padding: 0; }
+.brand-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* הניקוד מוסיף גובה לשורה; מעט אוויר וריווח מונעים מהתגים
+   להתנגש באותיות ומשאירים את השם קריא. */
+.brand h1 {
+  font-size: 25px; line-height: 1.34; letter-spacing: .01em;
+  background: linear-gradient(100deg,var(--title-1),var(--title-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
 .brand p { font-size: 12.5px; color: var(--txt-dim); font-weight: 500; letter-spacing: .04em; }
 
 .wallet { display: flex; gap: 8px; margin-bottom: 12px; }

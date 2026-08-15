@@ -24,9 +24,14 @@
 
     <header class="home-head">
       <div class="brand">
-        <div class="brand-mark">🗺️</div>
+        <!-- אייקון המצפן. אם הקובץ חסר, ה-onerror מחזיר את האימוג'י
+             ואת הרקע המדורג, כך שהכותרת לעולם לא נשארת ריקה. -->
+        <div class="brand-mark has-img">
+          <img src="assets/icon.png" alt="" decoding="async"
+               onerror="const b=this.parentNode; this.remove(); b.classList.remove('has-img'); b.textContent='🗺️';">
+        </div>
         <div>
-          <h1>אבן דרך</h1>
+          <h1>אֶבֶן דֶּרֶךְ</h1>
           <p>ידיעת הארץ למורי דרך</p>
         </div>
       </div>

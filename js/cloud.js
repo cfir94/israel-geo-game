@@ -234,6 +234,17 @@ const Cloud = (() => {
     }));
   }
 
+  /* מצרף את המשתמש לכיתה. משמש גם לצירוף אוטומטי של מי שנרשם
+     לפני שהיה שדה כיתה, וגם לשינוי ידני דרך מסך החשבון. */
+  async function setClass(code) {
+    if (!on() || !session || !code) return;
+    await withAuth(() => call('/rest/v1/profiles?id=eq.' + session.user_id, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: { class_code: code }
+    }));
+    saveSession({ ...session, class_code: code });
+  }
+
   /* אירוע הישג לפיד. תווית מרשימה סגורה, בלי טקסט חופשי. */
   async function logEvent(kind, label, value) {
     if (!on() || !session || !session.class_code) return;
@@ -302,6 +313,6 @@ const Cloud = (() => {
     get enabled() { return on(); },
     loadSession, current, signUp, signIn, signOut, quickAuth,
     pull, push, leaderboard, merge, ensureProfile,
-    classWeek, classFeed, classRoster, pushActivity, logEvent
+    classWeek, classFeed, classRoster, pushActivity, logEvent, setClass
   };
 })();

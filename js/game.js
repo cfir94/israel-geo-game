@@ -157,6 +157,10 @@ async function cloudSyncIn() {
   setSync('busy');
   try {
     const remote = await Cloud.pull();
+    /* מי שנרשם לפני שהיה שדה כיתה נשאר בלי אחת, ולכן מחוץ ללוח.
+       מצרפים אותו לכיתת ברירת המחדל בכניסה הבאה, בלי שיצטרך לעשות
+       דבר. מי שבחר כיתה אחרת לא נגעים בו. */
+    if (!Cloud.current().class_code) await Cloud.setClass(DEFAULT_CLASS);
     if (remote) SAVE = Cloud.merge(SAVE, remote);
     Store.set(JSON.stringify(SAVE));
     await Cloud.push(SAVE, cloudStats());
@@ -1949,6 +1953,11 @@ async function submitAccount() {
     renderHUD();
     updateAccountChip();
     refreshClassCards(true);
+    /* ישר למשחק. מסך פרטי החשבון הוא מסך שירות – מי שנרשם עכשיו
+       רוצה לשחק, לא לקרוא כמה נקודות יש לו (אפס). הוא נשאר זמין
+       דרך הצ'יפ בכותרת למי שמחפש אותו. */
+    $('#account').classList.remove('on');
+    if (currentScreen !== 'home') goHome();
     SFX.coin();
     toast('שלום ' + (Cloud.current().display_name || name || '') + ' · ההתקדמות נשמרת');
   } catch (e) {
