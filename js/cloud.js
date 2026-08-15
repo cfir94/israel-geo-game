@@ -133,7 +133,8 @@ const Cloud = (() => {
   }
 
   /* נרשם אם זו הפעם הראשונה, ומתחבר אם החשבון כבר קיים */
-  async function quickAuth(email, displayName, classCode) {
+  async function quickAuth(email, displayName, rawClass) {
+    const classCode = normClass(rawClass);
     const pass = await derivePass(email);
     try {
       return await signUp(email, pass, displayName, classCode);
@@ -236,7 +237,8 @@ const Cloud = (() => {
 
   /* מצרף את המשתמש לכיתה. משמש גם לצירוף אוטומטי של מי שנרשם
      לפני שהיה שדה כיתה, וגם לשינוי ידני דרך מסך החשבון. */
-  async function setClass(code) {
+  async function setClass(raw) {
+    const code = normClass(raw);
     if (!on() || !session || !code) return;
     await withAuth(() => call('/rest/v1/profiles?id=eq.' + session.user_id, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },

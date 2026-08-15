@@ -1933,7 +1933,7 @@ function setAccTab() {
 async function submitAccount() {
   const email = $('#acc-email').value.trim();
   const name = $('#acc-name').value.trim();
-  const cls = $('#acc-class').value.trim();
+  const cls = normClass($('#acc-class').value);
   const pass = $('#acc-pass').value;
   const err = $('#acc-err');
   err.textContent = '';
