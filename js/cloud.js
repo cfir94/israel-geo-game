@@ -78,14 +78,15 @@ const Cloud = (() => {
       refresh_token: r.refresh_token,
       user_id: r.user ? r.user.id : null,
       email: r.user ? r.user.email : '',
-      display_name: meta.display_name || fallbackName || ''
+      display_name: meta.display_name || fallbackName || '',
+      class_code: meta.class_code || ''
     };
   }
 
-  async function signUp(email, password, displayName) {
+  async function signUp(email, password, displayName, classCode) {
     const r = await call('/auth/v1/signup', {
       method: 'POST', auth: false,
-      body: { email, password, data: { display_name: displayName } }
+      body: { email, password, data: { display_name: displayName, class_code: classCode || '' } }
     });
     if (!r.access_token) {
       /* הפרויקט דורש אישור מייל – ראו את הערת ההגדרה ב-README */
@@ -94,7 +95,8 @@ const Cloud = (() => {
       throw e;
     }
     saveSession(unpack(r, displayName));
-    await ensureProfile(displayName);
+    if (classCode) saveSession({ ...session, class_code: classCode });
+    await ensureProfile(displayName, classCode);
     return session;
   }
 
@@ -131,42 +133,47 @@ const Cloud = (() => {
   }
 
   /* נרשם אם זו הפעם הראשונה, ומתחבר אם החשבון כבר קיים */
-  async function quickAuth(email, displayName) {
+  async function quickAuth(email, displayName, classCode) {
     const pass = await derivePass(email);
     try {
-      return await signUp(email, pass, displayName);
+      return await signUp(email, pass, displayName, classCode);
     } catch (e) {
       if (e.needsConfirm) throw e;
       const s = await signIn(email, pass);
-      /* שם התצוגה מתעדכן אם הוקלד שם חדש */
-      if (displayName && displayName !== s.display_name) {
-        saveSession({ ...s, display_name: displayName });
-        await ensureProfile(displayName);
+      /* שם וכיתה מתעדכנים אם הוקלדו מחדש */
+      if ((displayName && displayName !== s.display_name) || classCode) {
+        saveSession({ ...s, display_name: displayName || s.display_name,
+          class_code: classCode || s.class_code });
+        await ensureProfile(displayName, classCode);
       }
       return session;
     }
   }
 
   /* ----------------------------------------------- פרופיל -- */
-  async function ensureProfile(displayName) {
+  async function ensureProfile(displayName, classCode) {
     if (!session) return;
+    const row = { id: session.user_id, display_name: displayName || session.display_name || '' };
+    if (classCode || session.class_code) row.class_code = classCode || session.class_code;
     await withAuth(() => call('/rest/v1/profiles', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: [{ id: session.user_id, display_name: displayName || session.display_name || '' }]
+      body: [row]
     }));
   }
 
   /* מושך את השמירה מהשרת. מחזיר null אם אין עדיין */
   async function pull() {
     if (!on() || !session) return null;
-    const rows = await withAuth(() => call(
-      '/rest/v1/profiles?id=eq.' + session.user_id + '&select=save,display_name,xp,stars'));
+    const rows = await withAuth(() => call('/rest/v1/profiles?id=eq.' + session.user_id +
+      '&select=save,display_name,class_code,is_teacher,xp,stars'));
     if (!rows || !rows.length) return null;
     const row = rows[0];
-    if (row.display_name && row.display_name !== session.display_name) {
-      saveSession({ ...session, display_name: row.display_name });
-    }
+    const patch = {};
+    if (row.display_name && row.display_name !== session.display_name) patch.display_name = row.display_name;
+    if (row.class_code && row.class_code !== session.class_code) patch.class_code = row.class_code;
+    if (!!row.is_teacher !== !!session.is_teacher) patch.is_teacher = !!row.is_teacher;
+    if (Object.keys(patch).length) saveSession({ ...session, ...patch });
     return row.save && Object.keys(row.save).length ? row.save : null;
   }
 
@@ -180,15 +187,63 @@ const Cloud = (() => {
         save,
         xp: (stats && stats.xp) || 0,
         stars: (stats && stats.stars) || 0,
+        streak: (stats && stats.streak) || 0,
+        best_streak: (stats && stats.bestStreak) || 0,
+        shields: (stats && stats.shields) || 0,
+        last_active: (stats && stats.lastActive) || null,
         display_name: session.display_name || '',
+        class_code: session.class_code || '',
         updated_at: new Date().toISOString()
       }
     }));
   }
 
-  async function leaderboard() {
+  const rpc = (name, body = {}) => withAuth(() =>
+    call('/rest/v1/rpc/' + name, { method: 'POST', body }));
+
+  async function leaderboard(period = 'all') {
     if (!on() || !session) return [];
-    return (await withAuth(() => call('/rest/v1/rpc/leaderboard', { method: 'POST', body: {} }))) || [];
+    return (await rpc('leaderboard', { p_period: period })) || [];
+  }
+  async function classWeek() {
+    if (!on() || !session) return null;
+    const r = await rpc('class_week');
+    return Array.isArray(r) ? r[0] : r;
+  }
+  async function classFeed(limit = 30) {
+    if (!on() || !session) return [];
+    return (await rpc('class_feed', { p_limit: limit })) || [];
+  }
+  async function classRoster() {
+    if (!on() || !session) return [];
+    return (await rpc('class_roster')) || [];
+  }
+
+  /* יומן הפעילות: שורה ליום, נדרסת בכל דחיפה */
+  async function pushActivity(log) {
+    if (!on() || !session || !log) return;
+    const rows = Object.keys(log).sort().slice(-14).map(day => ({
+      user_id: session.user_id, day,
+      xp: log[day].xp | 0, questions: log[day].q | 0
+    }));
+    if (!rows.length) return;
+    await withAuth(() => call('/rest/v1/activity?on_conflict=user_id,day', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: rows
+    }));
+  }
+
+  /* אירוע הישג לפיד. תווית מרשימה סגורה, בלי טקסט חופשי. */
+  async function logEvent(kind, label, value) {
+    if (!on() || !session || !session.class_code) return;
+    try {
+      await withAuth(() => call('/rest/v1/events', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: [{ user_id: session.user_id, class_code: session.class_code,
+                 kind, label: String(label).slice(0, 80), value: value | 0 }]
+      }));
+    } catch (e) { /* הפיד הוא בונוס – לא מפיל כלום */ }
   }
 
   /* ------------------------------------------------- מיזוג --
@@ -221,6 +276,23 @@ const Cloud = (() => {
     const ld = local.daily || {}, rd = remote.daily || {};
     out.daily = (ld.key || '') >= (rd.key || '') ? ld : rd;
 
+    /* רצף – לא מקסימום! אם בטלפון רצף 5 מהיום ובמחשב רצף 3
+       מלפני שבוע, הנכון הוא 5. מנצחת הרשומה שפעילה יותר לאחרונה. */
+    const fresh = (local.lastActive || '') >= (remote.lastActive || '') ? local : remote;
+    out.streak = fresh.streak || 0;
+    out.lastActive = fresh.lastActive || '';
+    out.bestStreak = Math.max(local.bestStreak || 0, remote.bestStreak || 0);
+    out.shields = Math.max(local.shields || 0, remote.shields || 0);
+
+    /* יומן הפעילות: איחוד לפי יום, והגבוה מנצח בכל יום */
+    out.log = {};
+    const days = new Set([...Object.keys(local.log || {}), ...Object.keys(remote.log || {})]);
+    for (const d of days) {
+      const a = (local.log || {})[d] || { xp: 0, q: 0 };
+      const b = (remote.log || {})[d] || { xp: 0, q: 0 };
+      out.log[d] = { xp: Math.max(a.xp || 0, b.xp || 0), q: Math.max(a.q || 0, b.q || 0) };
+    }
+
     /* הגדרות נשארות של המכשיר הנוכחי – ערכת נושא וצליל הם
        העדפה מקומית, לא הישג שצריך לסנכרן. */
     return out;
@@ -229,6 +301,7 @@ const Cloud = (() => {
   return {
     get enabled() { return on(); },
     loadSession, current, signUp, signIn, signOut, quickAuth,
-    pull, push, leaderboard, merge, ensureProfile
+    pull, push, leaderboard, merge, ensureProfile,
+    classWeek, classFeed, classRoster, pushActivity, logEvent
   };
 })();

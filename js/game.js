@@ -35,10 +35,13 @@ const pick = (arr, rnd) => arr[Math.floor(rnd() * arr.length)];
    לזיכרון בלבד – והמשתמש מקבל על כך הודעה במסך ההגדרות.        */
 /* שם היסטורי – שינוי המפתח ימחק את ההתקדמות של כל מי שכבר שיחק */
 const KEY = 'israel-geo-game-v1';
+/* ברירת המחדל בשדה הכיתה – חוסכת הקלדה למחזור הנוכחי */
+const DEFAULT_CLASS = 'קמ"ד שרון 26-27';
 const DEFAULT_SAVE = {
   coins: 120, xp: 0, stars: {}, best: {},
   sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto',
-  daily: {}, seen: {}, misses: [], welcomed: 0
+  daily: {}, seen: {}, misses: [], welcomed: 0,
+  streak: 0, bestStreak: 0, shields: 0, lastActive: '', log: {}
 };
 
 const Store = (() => {
@@ -74,7 +77,8 @@ function load() {
     if (!raw) return { ...DEFAULT_SAVE };
     const d = JSON.parse(raw);
     return { ...DEFAULT_SAVE, ...d, stars: d.stars || {}, best: d.best || {},
-      seen: d.seen || {}, misses: Array.isArray(d.misses) ? d.misses : [] };
+      seen: d.seen || {}, misses: Array.isArray(d.misses) ? d.misses : [],
+      log: d.log && typeof d.log === 'object' ? d.log : {} };
   } catch (e) { return { ...DEFAULT_SAVE }; }
 }
 function persist() {
@@ -86,11 +90,15 @@ function persist() {
    כל שמירה מקומית מתזמנת דחיפה לשרת. הדחיפות מקובצות כדי שלא
    נפנה לשרת על כל תשובה בנפרד; אם אין חשבון – לא קורה כלום.  */
 let pushTimer = null, syncState = 'idle';
+/* מטמון קצר לנתוני הכיתה, כדי לא לפנות לשרת על כל מעבר מסך */
+let classCache = { at: 0, week: null, board: null };
 
 function cloudStats() {
   let stars = 0;
   for (const m in SAVE.stars) for (const l in SAVE.stars[m]) stars += SAVE.stars[m][l];
-  return { xp: SAVE.xp || 0, stars };
+  return { xp: SAVE.xp || 0, stars,
+    streak: SAVE.streak || 0, bestStreak: SAVE.bestStreak || 0,
+    shields: SAVE.shields || 0, lastActive: SAVE.lastActive || null };
 }
 
 function cloudPushSoon(delay = 1500) {
@@ -116,6 +124,8 @@ async function cloudPushNow() {
       }
     }
     await Cloud.push(SAVE, cloudStats());
+    await Cloud.pushActivity(SAVE.log);
+    classCache.at = 0;   /* מה שהצגנו על הכיתה כבר לא מעודכן */
     setSync('ok');
   } catch (e) {
     setSync('err', e.message);
@@ -150,6 +160,8 @@ async function cloudSyncIn() {
     if (remote) SAVE = Cloud.merge(SAVE, remote);
     Store.set(JSON.stringify(SAVE));
     await Cloud.push(SAVE, cloudStats());
+    await Cloud.pushActivity(SAVE.log);
+    classCache.at = 0;
     setSync('ok');
     renderHUD(); renderModes();
   } catch (e) {
@@ -755,6 +767,27 @@ function startPractice() {
   if (!qs.length) { toast('אין טעויות לתרגל – כל הכבוד'); renderPracticeRow(); return; }
   startGame('practice', 0, { practice: true, qs });
 }
+/* להבת הרצף ורצועת שבעת הימים */
+function renderStreak() {
+  const n = SAVE.streak || 0;
+  $('#hud-streak').textContent = n;
+  const chip = $('#streak-chip');
+  chip.classList.toggle('hot', n > 0);
+  chip.classList.toggle('cold', n === 0);
+
+  const strip = $('#week-strip');
+  const today = dayKey();
+  strip.innerHTML = weekDays().map((d, i) => {
+    const done = playedOn(d);
+    const isToday = d === today;
+    const future = d > today;
+    return `<span class="wd${done ? ' on' : ''}${isToday ? ' today' : ''}${future ? ' future' : ''}">
+              <i>${DAY_LETTER[i]}</i></span>`;
+  }).join('');
+  const sh = $('#shield-have');
+  if (sh) sh.textContent = SAVE.shields || 0;
+}
+
 function renderPracticeRow() {
   const row = $('#practice-row');
   if (!row) return;
@@ -832,6 +865,7 @@ function renderHUD() {
     $('#xp-fill').style.width = Math.min(100, ((SAVE.xp - r.base) / (r.next - r.base)) * 100) + '%';
   }
   renderPracticeRow();
+  renderStreak();
   $('#cost-fifty').textContent = GAME_CONFIG.fiftyCost;
   $('#cost-hint').textContent = GAME_CONFIG.hintCost;
   $('#cost-skip').textContent = GAME_CONFIG.skipCost;
@@ -1500,6 +1534,11 @@ function finishGame() {
   SAVE.coins += coins;
   SAVE.xp += G.score;
 
+  /* רצף ויומן – נספרים על כל סיבוב שהושלם, כולל יומי ותרגול */
+  const streakNews = touchStreak();
+  logActivity(G.score, G.qs.length);
+  SAVE.weak = weakestMode();
+
   if (G.daily) {
     SAVE.daily = { key: G.dailyKey, score: G.score, correct: G.correct };
   } else if (G.practice) {
@@ -1536,6 +1575,10 @@ function finishGame() {
   $('#res-correct').textContent = G.correct + '/' + G.qs.length;
   $('#res-coins').textContent = '+' + coins;
 
+  const sl = $('#res-streak');
+  sl.textContent = streakLine(streakNews);
+  sl.hidden = !sl.textContent;
+
   const rv = $('#res-review');
   const misses = G.results.filter(r => r && !r.ok);
   rv.innerHTML = misses.length
@@ -1548,11 +1591,41 @@ function finishGame() {
   $('#res-next').style.display = hasNext ? 'block' : 'none';
   $('#res-again').textContent = G.practice ? (left ? 'עוד סיבוב' : 'לתפריט') : G.daily ? 'לתפריט' : 'שוב';
 
+  reportAchievements(stars, streakNews);
   if (stars === 3 || (G.daily && G.correct >= 8) || (G.practice && G.correct === G.qs.length)) { SFX.win(); confetti(); }
   else if (stars > 0) SFX.coin();
 
   renderHUD();
   show('result');
+}
+
+/* מדווח לפיד הכיתתי – רק הישגים אמיתיים, ורק אם יש כיתה */
+let lastStreakShout = '';
+function reportAchievements(stars, news) {
+  if (!Cloud.enabled || !Cloud.current()) return;
+  if (!G.daily && !G.practice && stars === 3) {
+    Cloud.logEvent('level', MODE_BY_ID[G.mode].name +
+      (BY_DIFF.has(G.mode) ? ' · ' + DIFFS[G.diff - 1].name : '') + ' · שלב ' + G.level, 3);
+  }
+  if (G.practice && G.correct === G.qs.length && G.qs.length >= 5) {
+    Cloud.logEvent('practice', 'ניקה ' + G.qs.length + ' טעויות', G.qs.length);
+  }
+  /* אבני דרך של רצף בלבד, ופעם אחת לכל ערך */
+  const milestone = [3, 7, 14, 21, 30, 50, 100].includes(news.streak);
+  if (milestone && lastStreakShout !== String(news.streak)) {
+    lastStreakShout = String(news.streak);
+    Cloud.logEvent('streak', 'רצף של ' + news.streak + ' ימים', news.streak);
+  }
+}
+
+/* שורת הרצף במסך הסיכום */
+function streakLine(news) {
+  if (!news) return '';
+  if (news.kind === 'grew')  return '🔥 רצף של ' + news.streak + ' ימים';
+  if (news.kind === 'start') return '🔥 התחלתם רצף';
+  if (news.kind === 'saved') return '🛡️ מגן הרצף הציל אתכם · רצף ' + news.streak;
+  if (news.kind === 'broke') return '🔥 רצף חדש מתחיל היום';
+  return '🔥 רצף של ' + news.streak + ' ימים';
 }
 
 function confetti() {
@@ -1801,6 +1874,9 @@ function showZoomHint() {
 function openAccount(welcome) {
   if (!welcome) SFX.tap();
   renderAccount();
+  const me = Cloud.enabled && Cloud.current();
+  const cf = $('#acc-class');
+  if (cf && !cf.value) cf.value = (me && me.class_code) || DEFAULT_CLASS;
   /* מצב "ברוכים הבאים": כותרת פתיחה, בלי כפתור סגירה שמבלבל */
   $('#acc-hero').hidden = !welcome;
   $('#acc-title').hidden = !!welcome;
@@ -1853,6 +1929,7 @@ function setAccTab() {
 async function submitAccount() {
   const email = $('#acc-email').value.trim();
   const name = $('#acc-name').value.trim();
+  const cls = $('#acc-class').value.trim();
   const pass = $('#acc-pass').value;
   const err = $('#acc-err');
   err.textContent = '';
@@ -1865,12 +1942,13 @@ async function submitAccount() {
   btn.textContent = 'רגע…';
   try {
     if (!$('#fld-pass').hidden && pass) await Cloud.signIn(email, pass);
-    else await Cloud.quickAuth(email, name);
+    else await Cloud.quickAuth(email, name, cls);
     await cloudSyncIn();
     dismissWelcome();
     renderAccount();
     renderHUD();
     updateAccountChip();
+    refreshClassCards(true);
     SFX.coin();
     toast('שלום ' + (Cloud.current().display_name || name || '') + ' · ההתקדמות נשמרת');
   } catch (e) {
@@ -1910,6 +1988,54 @@ function friendlyAuthError(e) {
   return e.message || 'משהו השתבש';
 }
 
+/* כרטיס האתגר וכרטיס הלוח – נטענים ברקע, ונשארים מוסתרים
+   כל עוד אין חשבון או אין כיתה. */
+async function refreshClassCards(force) {
+  const me = Cloud.enabled && Cloud.current();
+  const has = !!(me && me.class_code);
+  $('#class-card').hidden = !has;
+  $('#board-card').hidden = !has;
+  if (!has) return;
+
+  const topic = weeklyTopic();
+  $('#cc-topic').textContent = topic.icon + ' ' + topic.name;
+
+  if (!force && Date.now() - classCache.at < 60000 && classCache.week) {
+    paintClassCards(); return;
+  }
+  try {
+    const [week, board] = await Promise.all([Cloud.classWeek(), Cloud.leaderboard('week')]);
+    classCache = { at: Date.now(), week, board };
+    paintClassCards();
+  } catch (e) {
+    $('#cc-txt').textContent = 'לא הצלחנו לטעון את נתוני הכיתה';
+  }
+}
+function paintClassCards() {
+  const w = classCache.week || { members: 0, active: 0, questions: 0 };
+  const goal = classGoal(w.members);
+  const pct = Math.min(100, Math.round(100 * (w.questions || 0) / goal));
+  $('#cc-fill').style.width = pct + '%';
+  $('#cc-txt').innerHTML = `<b>${w.questions || 0}</b> מתוך <b>${goal}</b> שאלות השבוע · ` +
+    `${w.active || 0} מתוך ${w.members || 0} תרגלו` +
+    (pct >= 100 ? ' · <b>היעד הושג! 🎉</b>' : '');
+
+  const rows = (classCache.board || []).slice(0, 3);
+  const mine = (classCache.board || []).findIndex(r => r.is_me);
+  const mini = $('#board-mini');
+  mini.innerHTML = rows.map((r, i) => `
+    <div class="bm-row${r.is_me ? ' me' : ''}">
+      <span class="rank">${['🥇','🥈','🥉'][i]}</span>
+      <b>${escapeHtml(r.display_name)}</b>
+      ${r.streak ? `<span class="bm-streak">🔥${r.streak}</span>` : ''}
+      <span class="sc">${r.score}</span>
+    </div>`).join('') +
+    (mine > 2 ? `<div class="bm-row me"><span class="rank">${mine + 1}</span>
+       <b>${escapeHtml(classCache.board[mine].display_name)}</b>
+       <span class="sc">${classCache.board[mine].score}</span></div>` : '') ||
+    '<div class="board-empty">עוד לא שיחקו השבוע. תהיו הראשונים.</div>';
+}
+
 function updateAccountChip() {
   const btn = $('#btn-account');
   const me = Cloud.enabled && Cloud.current();
@@ -1929,26 +2055,100 @@ function doSignOut() {
 }
 
 /* ------------------------------------------ לוח הקבוצה ---- */
+let boardTab = 'week';
 async function openBoard() {
   show('board');
+  const me = Cloud.current();
+  $('#board-title').textContent = (me && me.class_code) ? me.class_code : 'לוח הכיתה';
+  $('[data-board-tab="class"]').hidden = !(me && me.is_teacher);
+  renderBoardTabs();
+  loadBoard();
+}
+function renderBoardTabs() {
+  $$('#board-tabs button').forEach(b => b.classList.toggle('on', b.dataset.boardTab === boardTab));
+}
+
+const BOARD_NOTE = {
+  week: 'ניקוד השבוע בלבד, מתאפס כל יום ראשון – כך שכל שבוע אפשר לנצח מחדש.',
+  all: 'הניקוד המצטבר מאז ההתחלה.',
+  feed: 'מה קרה בכיתה לאחרונה. רק הישגים, בלי צ׳אט.',
+  class: 'מבט מרצה: מי פעיל, מי בפיגור ובאיזה נושא כל אחד נופל.'
+};
+
+async function loadBoard() {
   const list = $('#board-list');
+  $('#board-note').textContent = BOARD_NOTE[boardTab] || '';
   list.innerHTML = '<div class="board-empty">טוען…</div>';
   try {
-    const rows = await Cloud.leaderboard();
-    const me = Cloud.current();
-    if (!rows.length) {
-      list.innerHTML = '<div class="board-empty">עדיין אין תוצאות.<br>סיימו שלב וההתקדמות תופיע כאן.</div>';
-      return;
-    }
-    list.innerHTML = rows.map((r, i) => `
-      <div class="board-row ${i < 3 ? 'top' + (i + 1) : ''} ${me && r.display_name === me.display_name ? 'me' : ''}">
-        <span class="rank">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</span>
-        <b>${escapeHtml(r.display_name)}</b>
-        <span class="sc">${r.xp} נק׳ · ${r.stars} ★</span>
-      </div>`).join('');
+    if (boardTab === 'feed') return paintFeed(await Cloud.classFeed(40));
+    if (boardTab === 'class') return paintRoster(await Cloud.classRoster());
+    paintBoard(await Cloud.leaderboard(boardTab));
   } catch (e) {
-    list.innerHTML = '<div class="board-empty">לא הצלחנו לטעון את הלוח.<br>' + escapeHtml(friendlyAuthError(e)) + '</div>';
+    list.innerHTML = '<div class="board-empty">לא הצלחנו לטעון.<br>' + escapeHtml(friendlyAuthError(e)) + '</div>';
   }
+}
+
+function paintBoard(rows) {
+  const list = $('#board-list');
+  if (!rows.length) {
+    list.innerHTML = '<div class="board-empty">עדיין אין תוצאות בכיתה.<br>סיימו שלב וההתקדמות תופיע כאן.</div>';
+    return;
+  }
+  list.innerHTML = rows.map((r, i) => `
+    <div class="board-row ${i < 3 ? 'top' + (i + 1) : ''} ${r.is_me ? 'me' : ''}">
+      <span class="rank">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</span>
+      <b>${escapeHtml(r.display_name)}</b>
+      ${r.streak ? `<span class="bm-streak">🔥${r.streak}</span>` : ''}
+      <span class="sc">${r.score} נק׳ · ${r.stars} ★</span>
+    </div>`).join('');
+}
+
+const FEED_ICON = { level: '⭐', streak: '🔥', practice: '🎯' };
+function paintFeed(rows) {
+  const list = $('#board-list');
+  if (!rows.length) {
+    list.innerHTML = '<div class="board-empty">עוד אין הישגים בכיתה.<br>סיימו שלב עם שלושה כוכבים ותהיו הראשונים.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(r => `
+    <div class="feed-row">
+      <span class="fi">${FEED_ICON[r.kind] || '📌'}</span>
+      <div><b>${escapeHtml(r.display_name)}</b><p>${escapeHtml(r.label)}</p></div>
+      <span class="ago">${timeAgo(r.created_at)}</span>
+    </div>`).join('');
+}
+function timeAgo(iso) {
+  const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+  if (m < 60) return m <= 1 ? 'עכשיו' : 'לפני ' + m + ' דק׳';
+  const h = Math.round(m / 60);
+  if (h < 24) return 'לפני ' + h + ' ש׳';
+  const d = Math.round(h / 24);
+  return d === 1 ? 'אתמול' : 'לפני ' + d + ' ימים';
+}
+
+/* מבט המרצה: מי פעיל, מי בפיגור, ומה הנקודה החלשה */
+function paintRoster(rows) {
+  const list = $('#board-list');
+  if (!rows.length) {
+    list.innerHTML = '<div class="board-empty">אין עדיין תלמידים בכיתה הזאת.</div>';
+    return;
+  }
+  const today = dayKey();
+  list.innerHTML = rows.map(r => {
+    const gap = r.last_active ? daysBetween(r.last_active, today) : 999;
+    const state = gap <= 1 ? 'ok' : gap <= 3 ? 'mid' : 'cold';
+    const when = !r.last_active ? 'לא התחיל' : gap === 0 ? 'היום' : gap === 1 ? 'אתמול' : 'לפני ' + gap + ' ימים';
+    return `<div class="roster-row ${state}">
+      <div class="rr-top"><b>${escapeHtml(r.display_name)}</b>
+        <span class="rr-when">${when}</span></div>
+      <div class="rr-meta">
+        <span>🔥 ${r.streak || 0}</span>
+        <span>השבוע: ${r.week_questions || 0} שאלות</span>
+        <span>${r.xp || 0} נק׳ · ${r.stars || 0} ★</span>
+      </div>
+      ${r.weak_spot ? `<p class="rr-weak">נקודה חלשה: <b>${escapeHtml(r.weak_spot)}</b></p>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function escapeHtml(t) {
@@ -2025,6 +2225,17 @@ function bind() {
   };
   $('#btn-atlas').onclick = () => { SFX.tap(); openAtlas(); };
   $('#btn-practice').onclick = () => { SFX.tap(); startPractice(); };
+  $('#btn-shield').onclick = () => {
+    const r = buyShield();
+    if (r === 'poor') { SFX.bad(); toast('צריך ' + SHIELD_COST + ' מטבעות'); return; }
+    if (r === 'full') { toast('יש כבר ' + SHIELD_MAX + ' מגנים'); return; }
+    persist(); SFX.coin(); renderHUD();
+    toast('🛡️ מגן רצף נוסף · ' + SAVE.shields + '/' + SHIELD_MAX);
+  };
+  $$('#board-tabs button').forEach(b => b.onclick = () => {
+    SFX.tap(); boardTab = b.dataset.boardTab; renderBoardTabs(); loadBoard();
+  });
+  $('#board-more').onclick = () => { SFX.tap(); boardTab = 'week'; openBoard(); };
   $('#atlas-search').addEventListener('input', e => {
     atlasQuery = e.target.value; renderAtlasList();
   });
@@ -2115,6 +2326,7 @@ function goHome() {
   renderHUD();
   renderModes();
   renderPracticeRow();
+  refreshClassCards();
   show('home');
 }
 
@@ -2142,6 +2354,7 @@ function boot() {
   renderHUD();
   renderModes();
   show('home');
+  refreshClassCards();
   /* בכניסה הראשונה נפתח מסך הפתיחה: שם, אימייל, או כאורח */
   setTimeout(maybeWelcome, 450);
 }

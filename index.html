@@ -37,12 +37,32 @@
     <div class="wallet">
       <div class="wallet-item"><span class="wi-ico">🪙</span><span id="hud-coins">0</span></div>
       <div class="wallet-item"><span class="wi-ico">⭐</span><span id="hud-stars" class="num-pair">0</span></div>
+      <div class="wallet-item" id="streak-chip"><span class="wi-ico">🔥</span><span id="hud-streak">0</span></div>
       <div class="wallet-item"><span class="wi-ico">🎖️</span><span id="hud-rank">מתלמד</span></div>
     </div>
 
     <div class="xp-wrap">
       <div class="xp-bar"><i id="xp-fill"></i></div>
       <div class="xp-txt"><span id="xp-label">דרגה 1</span><span id="xp-next">0 / 500 נק׳</span></div>
+    </div>
+
+    <div class="week-strip" id="week-strip"></div>
+
+    <div class="class-card" id="class-card" hidden>
+      <div class="cc-head">
+        <h3>🎯 אתגר הכיתה</h3>
+        <span id="cc-topic"></span>
+      </div>
+      <div class="cc-bar"><i id="cc-fill"></i></div>
+      <p class="cc-txt" id="cc-txt">טוען…</p>
+    </div>
+
+    <div class="board-card" id="board-card" hidden>
+      <div class="cc-head">
+        <h3>🏅 לוח הכיתה</h3>
+        <button class="link-btn" id="board-more">הכול ←</button>
+      </div>
+      <div class="board-mini" id="board-mini"></div>
     </div>
 
     <div class="home-extra" id="practice-row" hidden>
@@ -148,6 +168,7 @@
         <div><b id="res-correct">0</b><span>תשובות נכונות</span></div>
         <div><b id="res-coins">0</b><span>מטבעות</span></div>
       </div>
+      <p class="res-streak" id="res-streak" hidden></p>
       <div class="res-review" id="res-review"></div>
       <div class="res-btns">
         <button class="pill-btn ghost" id="res-again">שוב</button>
@@ -194,14 +215,20 @@
     </div>
   </div>
 
-  <!-- ==================== לוח הקבוצה ==================== -->
+  <!-- ==================== לוח הכיתה ==================== -->
   <section class="screen" id="screen-board">
     <header class="bar">
       <button class="icon-btn" data-back="home">→</button>
-      <div class="bar-title"><span>🏅</span><h2>לוח הקבוצה</h2></div>
+      <div class="bar-title"><span>🏅</span><h2 id="board-title">לוח הכיתה</h2></div>
       <button class="icon-btn" id="board-refresh" aria-label="רענון">↻</button>
     </header>
-    <p class="mode-desc">כל מי שמחובר לאותו משחק, לפי ניקוד. השמות בלבד — ההתקדמות עצמה של כל אחד פרטית.</p>
+    <div class="seg" id="board-tabs">
+      <button data-board-tab="week" class="on">השבוע</button>
+      <button data-board-tab="all">כל הזמן</button>
+      <button data-board-tab="feed">מה קורה</button>
+      <button data-board-tab="class" hidden>הכיתה שלי</button>
+    </div>
+    <p class="mode-desc" id="board-note"></p>
     <div class="board-list" id="board-list"></div>
   </section>
 
@@ -222,6 +249,8 @@
           <input id="acc-name" type="text" autocomplete="nickname" placeholder="איך שיופיע בלוח הקבוצה"></label>
         <label class="fld"><span>אימייל</span>
           <input id="acc-email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com"></label>
+        <label class="fld"><span>כיתה / מחזור</span>
+          <input id="acc-class" type="text" autocomplete="off" placeholder="קמ״ד שרון 26-27"></label>
         <label class="fld" id="fld-pass" hidden><span>סיסמה</span>
           <input id="acc-pass" type="password" autocomplete="current-password" placeholder="הסיסמה של החשבון הקיים"></label>
         <p class="acc-err" id="acc-err"></p>
@@ -266,6 +295,13 @@
       <label class="switch"><span>רטט</span><input type="checkbox" id="opt-haptic" checked></label>
       <label class="switch"><span>שמות אזורים על המפה</span><input type="checkbox" id="opt-labels" checked></label>
       <label class="switch"><span>שאלות הדרכה אחרי כל מיקום</span><input type="checkbox" id="opt-guideq" checked></label>
+      <div class="shield-row">
+        <div>
+          <b>🛡️ מגן רצף <span id="shield-have">0</span>/2</b>
+          <small>שומר על הרצף ביום שפוספס</small>
+        </div>
+        <button class="pill-btn ghost" id="btn-shield">150 🪙</button>
+      </div>
       <button class="pill-btn danger" id="btn-reset">איפוס התקדמות</button>
       <button class="pill-btn ghost" id="settings-close">סגירה</button>
       <p class="fineprint" id="storage-note">כל ההתקדמות נשמרת במכשיר שלכם בלבד.</p>
@@ -283,6 +319,7 @@
 <script src="js/guide.js"></script>
 <script src="js/routes.js"></script>
 <script src="js/structure.js"></script>
+<script src="js/social.js"></script>
 <script src="js/map.js"></script>
 <script src="js/game.js"></script>
 </body>

@@ -807,6 +807,110 @@ p { margin: 0; }
 .rock-legend span.hit { color: var(--txt); border-color: var(--teal); background: color-mix(in srgb, var(--teal) 14%, transparent); }
 .rock-legend i { width: 10px; height: 10px; border-radius: 3px; }
 
+/* ---------- רצף ימים ---------- */
+#streak-chip.hot .wi-ico { filter: drop-shadow(0 0 6px rgba(255,140,40,.7)); }
+#streak-chip.cold { opacity: .55; }
+
+.week-strip {
+  display: flex; gap: 6px; justify-content: space-between;
+  margin: 0 2px 14px; flex: 0 0 auto;
+}
+.wd {
+  flex: 1; display: grid; place-items: center; height: 30px;
+  border-radius: 10px; border: 1px solid var(--line); background: var(--card);
+  transition: background .2s, border-color .2s;
+}
+.wd i {
+  font-style: normal; font-size: 12px; font-weight: 800; color: var(--txt-dim);
+}
+.wd.on {
+  background: linear-gradient(135deg, color-mix(in srgb, #ff8c28 32%, transparent),
+                                      color-mix(in srgb, var(--star) 26%, transparent));
+  border-color: color-mix(in srgb, #ff8c28 55%, transparent);
+}
+.wd.on i { color: var(--txt); }
+.wd.today { border-color: var(--teal); border-width: 2px; }
+.wd.future { opacity: .4; }
+
+.shield-row {
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--line); background: var(--card);
+  border-radius: var(--r-md); padding: 12px 15px; margin: 4px 0 12px;
+}
+.shield-row div { flex: 1; min-width: 0; }
+.shield-row b { display: block; font-size: 14px; }
+.shield-row small { display: block; font-size: 12px; color: var(--txt-dim); margin-top: 2px; }
+.shield-row .pill-btn { padding: 10px 16px; font-size: 14px; flex: 0 0 auto; }
+
+.res-streak {
+  font-size: 15px; font-weight: 800; margin: 4px 0 10px;
+  color: var(--gold);
+}
+
+/* ---------- כרטיסי הכיתה במסך הבית ---------- */
+.class-card, .board-card {
+  flex: 0 0 auto; border: 1px solid var(--line); background: var(--card);
+  border-radius: var(--r-md); padding: 14px 15px; margin-bottom: 12px;
+}
+.cc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cc-head h3 { flex: 1; font-size: 15px; }
+.cc-head span { font-size: 12px; font-weight: 700; color: var(--txt-dim); }
+.link-btn {
+  background: none; border: 0; color: var(--teal); font: inherit;
+  font-size: 13px; font-weight: 800; cursor: pointer; padding: 2px 0;
+}
+.cc-bar { height: 9px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.cc-bar i {
+  display: block; height: 100%; width: 0; border-radius: 99px;
+  background: linear-gradient(90deg, var(--teal), var(--blue));
+  transition: width .6s cubic-bezier(.22,1,.36,1);
+}
+.cc-txt { font-size: 12.5px; color: var(--txt-dim); margin-top: 8px; line-height: 1.6; }
+.cc-txt b { color: var(--txt); }
+
+.board-mini { display: grid; gap: 6px; }
+.bm-row {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 13.5px; padding: 5px 2px;
+}
+.bm-row .rank { min-width: 22px; font-weight: 900; color: var(--txt-dim); }
+.bm-row b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-row .sc { font-weight: 800; color: var(--gold); direction: ltr; unicode-bidi: isolate; }
+.bm-row.me { background: color-mix(in srgb, var(--teal) 12%, transparent); border-radius: 10px; padding: 5px 8px; }
+.bm-streak { font-size: 11.5px; font-weight: 800; color: #ff8c28; direction: ltr; unicode-bidi: isolate; }
+
+/* ---------- פיד ההישגים ---------- */
+.feed-row {
+  display: flex; align-items: center; gap: 11px;
+  border: 1px solid var(--line); background: var(--card);
+  border-radius: var(--r-md); padding: 11px 14px; margin-bottom: 8px;
+}
+.feed-row .fi { font-size: 20px; flex: 0 0 auto; }
+.feed-row div { flex: 1; min-width: 0; }
+.feed-row b { font-size: 14px; }
+.feed-row p { font-size: 12.5px; color: var(--txt-dim); margin-top: 1px; }
+.feed-row .ago { font-size: 11px; color: var(--txt-dim); flex: 0 0 auto; }
+
+/* ---------- מבט המרצה ---------- */
+.roster-row {
+  border: 1px solid var(--line); background: var(--card);
+  border-inline-start: 3px solid var(--line);
+  border-radius: var(--r-md); padding: 11px 14px; margin-bottom: 8px;
+}
+.roster-row.ok   { border-inline-start-color: var(--ok); }
+.roster-row.mid  { border-inline-start-color: var(--star); }
+.roster-row.cold { border-inline-start-color: var(--red); }
+.rr-top { display: flex; align-items: baseline; gap: 8px; }
+.rr-top b { flex: 1; font-size: 14.5px; }
+.rr-when { font-size: 11.5px; color: var(--txt-dim); }
+.rr-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 5px; }
+.rr-meta span { font-size: 12px; color: var(--txt-dim); }
+.rr-weak { font-size: 12px; margin-top: 6px; color: var(--txt-dim); }
+.rr-weak b { color: var(--red); }
+
+#board-tabs { flex: 0 0 auto; flex-wrap: wrap; }
+#board-tabs button { font-size: 13px; padding: 9px 12px; }
+
 /* ---------- צ'יפ החשבון בכותרת ---------- */
 .acc-chip {
   display: flex; align-items: center; justify-content: center;
