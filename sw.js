@@ -10,7 +10,8 @@
    פניות ל-Supabase לא נוגעות במטמון כלל.
    ============================================================= */
 
-const VERSION = 'geo-game-v1';
+/* מעלים את המספר בכל שינוי ברשימה, אחרת מטמון ישן שורד את העדכון */
+const VERSION = 'geo-game-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -25,8 +26,10 @@ const ASSETS = [
   './js/guide.js',
   './js/routes.js',
   './js/structure.js',
+  './js/social.js',
   './js/map.js',
-  './js/game.js'
+  './js/game.js',
+  './assets/icon.png'
 ];
 
 self.addEventListener('install', e => {
