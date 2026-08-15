@@ -620,7 +620,10 @@ function buildQuestions(mode, level, diff = 1) {
       options: shuffle([{ label: t.a, correct: true }, ...t.w.map(w => ({ label: w }))], rnd),
       site: t.site ? SITE_BY_ID[t.site] : null,
       hint: t.site ? { text: 'קשור לאתר באזור ' + REGION_BY_ID[SITE_BY_ID[t.site].r].name } : { text: 'חשבו על ההקשר ההיסטורי' },
-      explain: t.site && SITE_BY_ID[t.site] ? SITE_BY_ID[t.site].n + ': ' + SITE_BY_ID[t.site].f : t.a
+      /* t.x – הסבר משלה. משמש בעיקר בשאלות שיא, שבהן המספרים
+         הוסרו מהמסיחים כדי לא להסגיר את התשובה, ומופיעים כאן. */
+      explain: t.x || (t.site && SITE_BY_ID[t.site]
+        ? SITE_BY_ID[t.site].n + ': ' + SITE_BY_ID[t.site].f : t.a)
     }));
   }
 
