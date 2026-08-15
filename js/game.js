@@ -37,7 +37,7 @@ const KEY = 'israel-geo-game-v1';
 const DEFAULT_SAVE = {
   coins: 120, xp: 0, stars: {}, best: {},
   sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto',
-  daily: {}, seen: {}, misses: []
+  daily: {}, seen: {}, misses: [], welcomed: 0
 };
 
 const Store = (() => {
@@ -1796,11 +1796,16 @@ function showZoomHint() {
 }
 
 /* --------------------------------------------- חשבון ---- */
-let accTab = 'in';
 
-function openAccount() {
-  SFX.tap();
+function openAccount(welcome) {
+  if (!welcome) SFX.tap();
   renderAccount();
+  /* מצב "ברוכים הבאים": כותרת פתיחה, בלי כפתור סגירה שמבלבל */
+  $('#acc-hero').hidden = !welcome;
+  $('#acc-title').hidden = !!welcome;
+  $('#acc-lead').hidden = !!welcome;
+  $('#account-close').hidden = !!welcome;
+  $('#account').classList.toggle('welcome', !!welcome);
   $('#account').classList.add('on');
 }
 
@@ -1832,49 +1837,66 @@ function renderAccount() {
     $('#acc-out').hidden = false;
     $('#acc-in').hidden = true;
     $('#acc-err').textContent = '';
-    setAccTab(accTab);
+    setAccTab();
   }
 }
 
-function setAccTab(tab) {
-  accTab = tab;
-  $$('#acc-tabs button').forEach(b => b.classList.toggle('on', b.dataset.accTab === tab));
-  $('#fld-name').hidden = tab !== 'up';
-  $('#acc-title').textContent = tab === 'up' ? 'חשבון חדש' : 'התחברות';
-  $('#acc-submit').textContent = tab === 'up' ? 'יצירת חשבון' : 'התחברות';
-  $('#acc-pass').setAttribute('autocomplete', tab === 'up' ? 'new-password' : 'current-password');
-  $('#acc-err').textContent = '';
+/* נשאר תואם לקריאות ישנות – הטופס אחד ואין יותר לשוניות */
+function setAccTab() {
+  $('#acc-submit').textContent = 'כניסה';
 }
 
+/* כניסה בצעד אחד: שם ואימייל. הסיסמה נגזרת מהאימייל ב-cloud.js,
+   ולכן אותה כתובת נכנסת לאותו חשבון מכל מכשיר. שדה הסיסמה נחשף
+   רק אם קיים חשבון ישן שנוצר עם סיסמה משלו. */
 async function submitAccount() {
   const email = $('#acc-email').value.trim();
-  const pass = $('#acc-pass').value;
   const name = $('#acc-name').value.trim();
+  const pass = $('#acc-pass').value;
   const err = $('#acc-err');
   err.textContent = '';
 
-  if (!email || !pass) { err.textContent = 'צריך אימייל וסיסמה'; return; }
-  if (accTab === 'up' && pass.length < 6) { err.textContent = 'הסיסמה צריכה להיות באורך 6 תווים לפחות'; return; }
-  if (accTab === 'up' && !name) { err.textContent = 'צריך שם לתצוגה'; return; }
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) { err.textContent = 'צריך כתובת אימייל תקינה'; return; }
+  if (!name && $('#fld-pass').hidden) { err.textContent = 'צריך שם לתצוגה'; return; }
 
   const btn = $('#acc-submit');
   btn.disabled = true;
   btn.textContent = 'רגע…';
   try {
-    if (accTab === 'up') await Cloud.signUp(email, pass, name);
-    else await Cloud.signIn(email, pass);
+    if (!$('#fld-pass').hidden && pass) await Cloud.signIn(email, pass);
+    else await Cloud.quickAuth(email, name);
     await cloudSyncIn();
+    dismissWelcome();
     renderAccount();
     renderHUD();
     updateAccountChip();
     SFX.coin();
+    toast('שלום ' + (Cloud.current().display_name || name || '') + ' · ההתקדמות נשמרת');
   } catch (e) {
-    err.textContent = friendlyAuthError(e);
+    const msg = friendlyAuthError(e);
+    /* חשבון שנוצר בעבר עם סיסמה – נותנים דרך להיכנס אליו */
+    if (/סיסמה|credential/i.test(msg) && $('#fld-pass').hidden) {
+      $('#fld-pass').hidden = false;
+      err.textContent = 'לאימייל הזה כבר יש חשבון עם סיסמה. הקלידו אותה, או השתמשו באימייל אחר.';
+    } else {
+      err.textContent = msg;
+    }
     SFX.bad();
   } finally {
     btn.disabled = false;
-    btn.textContent = accTab === 'up' ? 'יצירת חשבון' : 'התחברות';
+    btn.textContent = 'כניסה';
   }
+}
+
+/* מסך הפתיחה נפתח פעם אחת, בכניסה הראשונה */
+function maybeWelcome() {
+  if (!Cloud.enabled || Cloud.current() || SAVE.welcomed) return;
+  openAccount(true);
+}
+function dismissWelcome() {
+  if (SAVE.welcomed) return;
+  SAVE.welcomed = 1;
+  persist();
 }
 
 function friendlyAuthError(e) {
@@ -1890,8 +1912,11 @@ function friendlyAuthError(e) {
 function updateAccountChip() {
   const btn = $('#btn-account');
   const me = Cloud.enabled && Cloud.current();
+  const nm = me ? (me.display_name || (me.email || '').split('@')[0] || 'מחובר') : '';
   btn.classList.toggle('linked', !!me);
-  btn.textContent = me ? ((me.display_name || me.email || '?').trim()[0] || '?').toUpperCase() : '👤';
+  btn.querySelector('.ac-ini').textContent = me ? ((nm.trim()[0] || '?').toUpperCase()) : '👤';
+  $('#ac-name').textContent = nm;
+  btn.setAttribute('aria-label', me ? 'החשבון של ' + nm : 'חשבון');
   $('#board-row').hidden = !me;
 }
 
@@ -2029,8 +2054,12 @@ function bind() {
   $('#btn-account').onclick = openAccount;
   $('#account-close').onclick = () => $('#account').classList.remove('on');
   $('#account').onclick = e => { if (e.target.id === 'account') $('#account').classList.remove('on'); };
-  $('#acc-guest').onclick = () => { $('#account').classList.remove('on'); };
-  $$('#acc-tabs button').forEach(b => b.onclick = () => { SFX.tap(); setAccTab(b.dataset.accTab); });
+  $('#acc-guest').onclick = () => {
+    SFX.tap();
+    dismissWelcome();
+    $('#account').classList.remove('on');
+    toast('אפשר לפתוח חשבון בכל רגע מהכפתור למעלה');
+  };
   $('#acc-submit').onclick = submitAccount;
   $('#acc-pass').addEventListener('keydown', e => { if (e.key === 'Enter') submitAccount(); });
   $('#acc-signout').onclick = doSignOut;
@@ -2112,6 +2141,8 @@ function boot() {
   renderHUD();
   renderModes();
   show('home');
+  /* בכניסה הראשונה נפתח מסך הפתיחה: שם, אימייל, או כאורח */
+  setTimeout(maybeWelcome, 450);
 }
 /* עבודה בלי רשת. נרשם רק כשהדף מוגש מקובץ אמיתי – בגרסת
    ה-Artifact המשחק מוטמע ואין לו service worker משלו. */

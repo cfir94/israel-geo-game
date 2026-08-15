@@ -30,7 +30,7 @@
           <p>משחק מורי הדרך</p>
         </div>
       </div>
-      <button class="icon-btn" id="btn-account" aria-label="חשבון">👤</button>
+      <button class="icon-btn acc-chip" id="btn-account" aria-label="חשבון"><span class="ac-ini">👤</span><span class="ac-name" id="ac-name"></span></button>
       <button class="icon-btn" id="btn-settings" aria-label="הגדרות">⚙️</button>
     </header>
 
@@ -211,21 +211,22 @@
       <div class="sheet-grab"></div>
 
       <div id="acc-out">
-        <h3 id="acc-title">התחברות</h3>
-        <p class="acc-lead" id="acc-lead">חשבון שומר את ההתקדמות בענן — אפשר להמשיך מכל מכשיר, וההתקדמות לא נעלמת אם הדפדפן מנקה נתונים.</p>
-        <div class="seg" id="acc-tabs">
-          <button data-acc-tab="in" class="on">התחברות</button>
-          <button data-acc-tab="up">חשבון חדש</button>
+        <div class="acc-hero" id="acc-hero" hidden>
+          <span class="acc-hero-ico">🗺️</span>
+          <h3>ברוכים הבאים למפת הארץ</h3>
+          <p>רשמו שם ואימייל כדי שההתקדמות תישמר ותוכלו להמשיך מכל מכשיר — ולראות את עצמכם בלוח הקבוצה.</p>
         </div>
-        <label class="fld" id="fld-name" hidden><span>שם לתצוגה</span>
+        <h3 id="acc-title">כניסה</h3>
+        <p class="acc-lead" id="acc-lead">בלי סיסמה — רק שם ואימייל. ההתקדמות נשמרת בענן ואפשר להמשיך מכל מכשיר.</p>
+        <label class="fld" id="fld-name"><span>שם לתצוגה</span>
           <input id="acc-name" type="text" autocomplete="nickname" placeholder="איך שיופיע בלוח הקבוצה"></label>
         <label class="fld"><span>אימייל</span>
           <input id="acc-email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com"></label>
-        <label class="fld"><span>סיסמה</span>
-          <input id="acc-pass" type="password" autocomplete="current-password" placeholder="לפחות 6 תווים"></label>
+        <label class="fld" id="fld-pass" hidden><span>סיסמה</span>
+          <input id="acc-pass" type="password" autocomplete="current-password" placeholder="הסיסמה של החשבון הקיים"></label>
         <p class="acc-err" id="acc-err"></p>
-        <button class="pill-btn primary" id="acc-submit">התחברות</button>
-        <button class="text-btn" id="acc-guest">להמשיך בלי חשבון</button>
+        <button class="pill-btn primary" id="acc-submit">כניסה</button>
+        <button class="pill-btn ghost" id="acc-guest">להמשיך כאורח</button>
       </div>
 
       <div id="acc-in" hidden>

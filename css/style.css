@@ -159,6 +159,9 @@
 
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* כלל ברירת המחדל של הדפדפן ל-[hidden] נופל מול כל display במחלקה.
+   בלי זה, אלמנטים עם hidden=true ממשיכים להופיע. */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0; padding: 0; height: 100%;
@@ -227,7 +230,8 @@ p { margin: 0; }
   filter: blur(10px);
 }
 .home-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-.brand { display: flex; align-items: center; gap: 12px; flex: 1; }
+.brand { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; }
+.brand h1 { white-space: nowrap; }
 .brand-mark {
   width: 52px; height: 52px; border-radius: 17px;
   display: grid; place-items: center; font-size: 27px;
@@ -802,6 +806,44 @@ p { margin: 0; }
 }
 .rock-legend span.hit { color: var(--txt); border-color: var(--teal); background: color-mix(in srgb, var(--teal) 14%, transparent); }
 .rock-legend i { width: 10px; height: 10px; border-radius: 3px; }
+
+/* ---------- צ'יפ החשבון בכותרת ---------- */
+.acc-chip {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 1 auto; width: auto; min-width: 42px;
+  padding: 0 7px; gap: 7px; overflow: hidden;
+}
+.acc-chip .ac-ini { font-size: 19px; line-height: 1; }
+.acc-chip .ac-name { display: none; }
+.acc-chip.linked {
+  padding-inline-end: 12px;
+  border-color: color-mix(in srgb, var(--teal) 45%, transparent);
+  background: color-mix(in srgb, var(--teal) 13%, transparent);
+}
+.acc-chip.linked .ac-ini {
+  width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--teal); color: var(--on-accent);
+  font-size: 13px; font-weight: 900;
+}
+.acc-chip.linked .ac-name {
+  display: block; max-width: 108px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13.5px; font-weight: 800; color: var(--txt);
+}
+
+/* ---------- מסך הפתיחה בכניסה הראשונה ---------- */
+.acc-hero { text-align: center; margin-bottom: 20px; }
+.acc-hero-ico {
+  display: grid; place-items: center; margin: 0 auto 12px;
+  width: 62px; height: 62px; border-radius: 20px; font-size: 32px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--teal) 30%, transparent),
+                                      color-mix(in srgb, var(--blue) 24%, transparent));
+}
+.acc-hero h3 { font-size: 20px; margin-bottom: 8px; }
+.acc-hero p { font-size: 14px; line-height: 1.65; color: var(--txt-dim); }
+.sheet.welcome .sheet-grab { opacity: .35; }
+#acc-guest { margin-top: 9px; }
 
 /* ---------- חיפוש באטלס ---------- */
 .atlas-search {

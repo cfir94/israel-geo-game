@@ -109,6 +109,41 @@ const Cloud = (() => {
   function signOut() { saveSession(null); }
   const current = () => session;
 
+  /* ---------------------------------------- כניסה בלי סיסמה --
+     Supabase דורש סיסמה, ולכן היא נגזרת מהאימייל עצמו: אותו
+     אימייל נותן תמיד את אותה סיסמה, ולכן אפשר להיכנס מכל מכשיר
+     בלי לזכור דבר.
+
+     המשמעות: האימייל הוא האסמכתה היחידה. מי שיודע את האימייל של
+     מישהו אחר יכול להיכנס לחשבונו ולראות או לדרוס את ההתקדמות
+     שלו. בשביל משחק תרגול שמחזיק נקודות וכוכבים בלבד זה מקובל,
+     ולא היינו עושים את זה במערכת עם מידע רגיש.            */
+  const SALT = 'mapat-haaretz/v1';
+  async function derivePass(email) {
+    const data = new TextEncoder().encode(email.trim().toLowerCase() + '|' + SALT);
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    /* אותיות, ספרות וסימן – עומד בדרישות המורכבות של Supabase */
+    return 'Gg1!' + b64.replace(/[^A-Za-z0-9]/g, '').slice(0, 28);
+  }
+
+  /* נרשם אם זו הפעם הראשונה, ומתחבר אם החשבון כבר קיים */
+  async function quickAuth(email, displayName) {
+    const pass = await derivePass(email);
+    try {
+      return await signUp(email, pass, displayName);
+    } catch (e) {
+      if (e.needsConfirm) throw e;
+      const s = await signIn(email, pass);
+      /* שם התצוגה מתעדכן אם הוקלד שם חדש */
+      if (displayName && displayName !== s.display_name) {
+        saveSession({ ...s, display_name: displayName });
+        await ensureProfile(displayName);
+      }
+      return session;
+    }
+  }
+
   /* ----------------------------------------------- פרופיל -- */
   async function ensureProfile(displayName) {
     if (!session) return;
@@ -190,7 +225,7 @@ const Cloud = (() => {
 
   return {
     get enabled() { return on(); },
-    loadSession, current, signUp, signIn, signOut,
+    loadSession, current, signUp, signIn, signOut, quickAuth,
     pull, push, leaderboard, merge, ensureProfile
   };
 })();
