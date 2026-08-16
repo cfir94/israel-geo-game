@@ -434,6 +434,13 @@ p { margin: 0; }
   font-size: 13.5px; line-height: 1.5; overflow: hidden;
   padding: 11px 14px; background: transparent; border: 1px solid transparent;
   opacity: 0; transition: opacity .25s; cursor: pointer;
+  /* מסך המשחק הוא עמודת flex, ו-map-shell (flex:1, ובתצוגת חשיפה
+     גם min-height:46vh) לוקח כל שטח פנוי שהוא יכול. בלי flex-shrink:0
+     הדפדפן כיווץ את תיבת המשוב הזו מתחת לגובה התוכן שלה כדי שהכול
+     "יסתדר" בלי גלילה – וההסבר הארוך נחתך, בלי שיהיה למה לגלול.
+     עם flex-shrink:0 התיבה תמיד בגובה התוכן המלא שלה, וכשזה לא
+     נכנס במסך, ל-.screen יש כבר overflow-y:auto שמאפשר לגלול אליו. */
+  flex-shrink: 0;
 }
 .feedback.on { opacity: 1; background: var(--card); border-color: var(--line); animation: screenIn .3s; }
 .fb-head { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
