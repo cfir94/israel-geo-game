@@ -1997,6 +1997,9 @@ function friendlyAuthError(e) {
   if (m.includes('already registered') || m.includes('already been registered')) return 'האימייל הזה כבר רשום – נסו להתחבר';
   if (m.includes('failed to fetch') || m.includes('networkerror')) return 'אין חיבור לשרת. בדקו אינטרנט, או שהפרויקט בהשהיה';
   if (m.includes('password')) return 'הסיסמה קצרה מדי';
+  /* refresh token שנפסל לגמרי (למשל התחברות לאותו חשבון ממכשיר
+     אחר) – Cloud כבר ניקה את הסשן; מזכירים שהחזרה קלה, בלי סיסמה */
+  if (m.includes('refresh token')) return 'תוקף ההתחברות פג. היכנסו שוב עם אותו אימייל – בלי סיסמה, זה מיידי.';
   return e.message || 'משהו השתבש';
 }
 
@@ -2021,6 +2024,10 @@ async function refreshClassCards(force) {
     paintClassCards();
   } catch (e) {
     $('#cc-txt').textContent = 'לא הצלחנו לטעון את נתוני הכיתה';
+    /* אם ה-refresh token נפסל לגמרי, Cloud כבר ניקה את הסשן;
+       מרעננים את הצ'יפ והכרטיסים כדי שהמסך יפסיק להיראות מחובר
+       בעוד שבפועל הוא לא, ולא יחכה לרענון הבא */
+    if (!Cloud.current()) { updateAccountChip(); refreshClassCards(true); }
   }
 }
 function paintClassCards() {
@@ -2100,6 +2107,7 @@ async function loadBoard() {
     paintBoard(await Cloud.leaderboard(boardTab));
   } catch (e) {
     list.innerHTML = '<div class="board-empty">לא הצלחנו לטעון.<br>' + escapeHtml(friendlyAuthError(e)) + '</div>';
+    if (!Cloud.current()) updateAccountChip();
   }
 }
 

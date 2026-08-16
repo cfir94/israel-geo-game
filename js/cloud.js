@@ -56,16 +56,44 @@ const Cloud = (() => {
     return data;
   }
 
+  /* Supabase מקבל כל refresh_token פעם אחת בלבד – שימוש בו מחליף
+     אותו באחר. הלוח פותח כמה קריאות מאומתות במקביל (classWeek +
+     leaderboard), ואם שתיהן נתקלות בטוקן שפג יחד, שתיהן היו מנסות
+     לרענן עם אותו refresh_token: הראשונה מצליחה ומחליפה אותו,
+     השנייה נדחית עם "Invalid Refresh Token: Already Used". קריאה
+     משותפת אחת, שכל הממתינים חולקים, מבטלת את המרוץ. */
+  let refreshing = null;
+  function refreshSession() {
+    if (!refreshing) {
+      refreshing = (async () => {
+        try {
+          const r = await call('/auth/v1/token?grant_type=refresh_token', {
+            method: 'POST', auth: false, body: { refresh_token: session.refresh_token }
+          });
+          saveSession({ ...session, access_token: r.access_token, refresh_token: r.refresh_token });
+        } catch (e) {
+          /* Supabase דוחה refresh_token לא תקף עם 400 – בין אם כי
+             כבר נוצל (המרוץ שמעליו כבר טופל) ובין אם כי הוא נפסל
+             לגמרי, למשל מהתחברות לאותו חשבון ממכשיר אחר. במקרה
+             השני ניסיון נוסף ייכשל באותו אופן בכל טעינה עתידית,
+             ולכן מנקים את הסשן: המשחק חוזר להתנהג כמו לפני
+             התחברות, וכניסה חוזרת (אימייל בלבד, בלי סיסמה) מחזירה
+             מיד את אותו חשבון. */
+          if (e.status === 400) saveSession(null);
+          throw e;
+        }
+      })().finally(() => { refreshing = null; });
+    }
+    return refreshing;
+  }
+
   /* מרענן טוקן שפג ומנסה שוב, פעם אחת */
   async function withAuth(fn) {
     try {
       return await fn();
     } catch (e) {
       if (e.status !== 401 || !session || !session.refresh_token) throw e;
-      const r = await call('/auth/v1/token?grant_type=refresh_token', {
-        method: 'POST', auth: false, body: { refresh_token: session.refresh_token }
-      });
-      saveSession({ ...session, access_token: r.access_token, refresh_token: r.refresh_token });
+      await refreshSession();
       return await fn();
     }
   }
