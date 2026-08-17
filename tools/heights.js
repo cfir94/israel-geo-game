@@ -1,7 +1,7 @@
 /* סורק את כל טקסטי המשחק ומאתר שם הר שמופיע עם שני גבהים שונים.
    שני מספרים לאותו הר הם שגיאה עובדתית שהתלמיד ייתקל בה כסתירה. */
 const fs=require('fs');
-const files=['data.js','geology.js','guide.js','routes.js','structure.js'];
+const files=['data.js','geology.js','guide.js','routes.js','structure.js','history.js','periods.js'];
 const NAME=/((?:הר|רמת|פסגת)\s+[א-ת׳״'\-]+(?:\s+[א-ת]+)?)[^.]{0,24}?([\d,]{3,6})\s*מ׳/g;
 const seen={};
 files.forEach(f=>{

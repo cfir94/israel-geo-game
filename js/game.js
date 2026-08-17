@@ -246,10 +246,12 @@ MODES.push({ id: 'bounds', name: 'גבולות ותפרים', icon: '📐', colo
   desc: 'איפה נגמר הגליל העליון ומתחיל התחתון, מה מפריד בין רמות מנשה לכרמל, ואיפה עובר קו פרשת המים. בדיוק השאלות שנשאלות בבחינה על גבולות חבלי הארץ.' });
 MODES.push({ id: 'history', name: 'ידיעת המדינה', icon: '🎖️', color: '#e0b04a', tag: 'מלחמות, ראשי ממשלה ומבצעים',
   desc: 'שנות המלחמות, סדר ראשי הממשלה והנשיאים, מבצעים חשובים ורמטכ"לים בזמן אמת – הידע ההיסטורי שנדרש בבחינת ההסמכה.' });
+MODES.push({ id: 'periods', name: 'ציר הזמן', icon: '📜', color: '#c9925a', tag: 'מהברונזה ועד המדינה',
+  desc: 'שש-עשרה תקופות, מהברונזה והברזל ועד המנדט והמדינה: הסדר הכרונולוגי, מי כבש את מי, ומי בנה מה.' });
 const MODE_BY_ID = Object.fromEntries(MODES.map(m => [m.id, m]));
 
 /* מצבים שמחולקים לרמות קושי לפי האתרים */
-const BY_DIFF = new Set(['locate', 'identify', 'regionOf', 'guide', 'rockAt', 'history']);
+const BY_DIFF = new Set(['locate', 'identify', 'regionOf', 'guide', 'rockAt', 'history', 'periods']);
 const DIFFS = [
   { id: 1, name: 'קל',     sub: 'אתרי חובה' },
   { id: 2, name: 'בינוני', sub: 'הרחבה' },
@@ -291,6 +293,7 @@ function levelCount(mode, diff = 1) {
   /* evenLevels/evenSlice ולא slice רגיל – אחרת שאלות בקצה כל רמת
      קושי נשארות יתומות ואף פעם לא עולות (כמו שקרה ב-TRIVIA). */
   if (mode === 'history') return evenLevels(historyPoolFor(diff).length, sitesPerLevel(mode));
+  if (mode === 'periods') return evenLevels(periodPoolFor(diff).length, sitesPerLevel(mode));
   if (BY_DIFF.has(mode)) {
     return Math.max(1, Math.min(12, Math.floor(poolFor(diff).length / sitesPerLevel(mode))));
   }
@@ -319,6 +322,7 @@ function sitesForLevel(level, diff, mode) {
 }
 
 function historyPoolFor(diff) { return HISTORY_Q.filter(r => r.t === diff); }
+function periodPoolFor(diff) { return PERIOD_Q.filter(r => r.t === diff); }
 
 /* ---------- אחוז הדיוק של מיקום על המפה ---------- */
 function accuracyPct(km) {
@@ -746,6 +750,32 @@ function buildQuestions(mode, level, diff = 1) {
       hint: { text: 'חשבו על הרצף הכרונולוגי' },
       explain: row.x || row.a
     }));
+  }
+
+  if (mode === 'periods') {
+    const per = sitesPerLevel('periods');
+    return evenSlice(periodPoolFor(diff), level, per).map(row => {
+      if (row.order) {
+        const [A, B] = row.order.map(id => PERIOD_BY_ID[id]);
+        const earlier = A.i < B.i ? A : B, later = A.i < B.i ? B : A;
+        return {
+          kind: 'choice', showMap: false, time: 20,
+          kicker: '📜 מה קדם למה?',
+          text: 'איזו משתי התקופות התרחשה קודם?', sub: '',
+          options: shuffle([{ label: earlier.name, correct: true }, { label: later.name }], rnd),
+          hint: { text: earlier.range + ' לעומת ' + later.range },
+          explain: earlier.name + ' (' + earlier.range + ') קדמה ל' + later.name + ' (' + later.range + ').'
+        };
+      }
+      return {
+        kind: 'choice', showMap: false, time: 22,
+        kicker: '📜 ציר הזמן',
+        text: row.q, sub: '',
+        options: shuffle([{ label: row.a, correct: true }, ...row.w.map(w => ({ label: w }))], rnd),
+        hint: { text: 'חשבו על סדר התקופות' },
+        explain: row.x || row.a
+      };
+    });
   }
 
   if (mode === 'rockWhere') {

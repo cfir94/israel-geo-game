@@ -11,7 +11,7 @@
    ============================================================= */
 
 /* מעלים את המספר בכל שינוי ברשימה, אחרת מטמון ישן שורד את העדכון */
-const VERSION = 'geo-game-v3';
+const VERSION = 'geo-game-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -27,6 +27,7 @@ const ASSETS = [
   './js/routes.js',
   './js/structure.js',
   './js/history.js',
+  './js/periods.js',
   './js/social.js',
   './js/map.js',
   './js/game.js',

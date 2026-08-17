@@ -1,13 +1,15 @@
 /* מאתר שאלות "מה הגבוה/הארוך/הגדול ביותר" שבהן כל מסיח נושא מספר,
    ולכן אפשר לענות בלי לדעת דבר – פשוט לבחור את המספר הקיצוני. */
 const fs=require('fs'), vm=require('vm');
-const src=['data.js','geology.js','guide.js','routes.js','structure.js']
+const src=['data.js','geology.js','guide.js','routes.js','structure.js','history.js','periods.js']
   .map(f=>fs.readFileSync('js/'+f,'utf8')).join('\n');
 const D=vm.runInNewContext(src+`
 ;({TRIVIA, GEO_TRIVIA: typeof GEO_TRIVIA!=='undefined'?GEO_TRIVIA:[],
    ROUTE_Q: typeof ROUTE_Q!=='undefined'?ROUTE_Q:[],
    STREAM_Q: typeof STREAM_Q!=='undefined'?STREAM_Q:[],
    STRUCT_Q: typeof STRUCT_Q!=='undefined'?STRUCT_Q:[],
+   HISTORY_Q: typeof HISTORY_Q!=='undefined'?HISTORY_Q:[],
+   PERIOD_Q: typeof PERIOD_Q!=='undefined'?PERIOD_Q:[],
    GUIDE: typeof GUIDE!=='undefined'?GUIDE:(typeof GUIDE_Q!=='undefined'?GUIDE_Q:[])})`,
   {}, {timeout:20000});
 
@@ -48,6 +50,8 @@ n+=check('GEO_TRIVIA', D.GEO_TRIVIA, r=>r);
 n+=check('ROUTE_Q', D.ROUTE_Q, r=>r);
 n+=check('STREAM_Q', D.STREAM_Q, r=>r);
 n+=check('STRUCT_Q', D.STRUCT_Q, r=>r);
+n+=check('HISTORY_Q', D.HISTORY_Q, r=>r);
+n+=check('PERIOD_Q', (D.PERIOD_Q||[]).filter(r=>!r.order), r=>r);
 const gq=[]; const walk=v=>{if(Array.isArray(v)){if(typeof v[1]==='string'&&typeof v[2]==='string')gq.push(v);else v.forEach(walk);}
   else if(v&&typeof v==='object')Object.values(v).forEach(walk);};
 walk(D.GUIDE);
