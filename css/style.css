@@ -302,6 +302,7 @@ p { margin: 0; }
   transition: background .2s, transform .14s;
 }
 .ghost-btn:active { transform: scale(.96); background: var(--card); }
+.ghost-btn:disabled { opacity: .55; pointer-events: none; }
 .credit { text-align: center; font-size: 11px; color: rgba(147,167,184,.6); padding: 14px 0 4px; }
 
 /* ------------------------------------------------ סרגל ---- */

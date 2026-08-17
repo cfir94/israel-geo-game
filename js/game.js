@@ -544,6 +544,86 @@ function distractorSites(site, count, rnd) {
   return out;
 }
 
+/* ---------- מה בסביבתי ----------
+   סיבוב חי לפי מיקום אמיתי: לא שלב שמורה, לא מקבל כוכבים, ולא
+   חוזר על עצמו באותה צורה פעמיים – כל השאלות נבנות מהאתרים
+   הקרובים ביותר למכשיר ברגע הלחיצה. */
+const NEARBY_COUNT = 8;
+
+function distanceLabel(km) {
+  if (km < 1) return Math.max(1, Math.round(km * 1000)) + ' מ׳';
+  if (km < 10) return km.toFixed(1) + ' ק״מ';
+  return Math.round(km) + ' ק״מ';
+}
+
+function sitesByDistance(loc) {
+  return SITES.map(s => ({ s, km: GameMap.haversine(loc.lat, loc.lon, s.lat, s.lon) }))
+    .sort((a, b) => a.km - b.km);
+}
+
+const nearbyKicker = km => '📍 מה בסביבתי · ' + distanceLabel(km) + ' מכאן';
+
+/* שלושה סוגי שאלה, בדיוק כמו locate / identify / regionOf –
+   רק שהאתר נבחר לפי מרחק במקום לפי שלב */
+function nearbyLocateQ(s, km) {
+  return {
+    kind: 'mapPoint', showMap: true, site: s, time: 25,
+    kicker: nearbyKicker(km), text: s.n,
+    sub: CATEGORIES[s.c].icon + ' ' + CATEGORIES[s.c].name,
+    target: { lat: s.lat, lon: s.lon },
+    hint: { text: 'האזור: ' + REGION_BY_ID[s.r].name, region: s.r },
+    explain: s.f
+  };
+}
+function nearbyIdentifyQ(s, km) {
+  const wrong = distractorSites(s, 3, Math.random);
+  return {
+    kind: 'choice', showMap: true, mapMode: 'pinRegion', site: s, time: 20,
+    kicker: nearbyKicker(km), text: 'איזה אתר מסומן בסיכה?', sub: '',
+    options: shuffle([{ label: s.n, correct: true }, ...wrong.map(w => ({ label: w.n }))]),
+    hint: { text: 'האתר נמצא ב' + REGION_BY_ID[s.r].name },
+    explain: s.f
+  };
+}
+function nearbyRegionQ(s, km) {
+  const buddy = SITES.filter(x => x.r === s.r && x.id !== s.id && x.lvl === 1)[0] ||
+                SITES.filter(x => x.r === s.r && x.id !== s.id)[0];
+  return {
+    kind: 'mapRegion', showMap: true, mapMode: 'regions', site: s, time: 20,
+    kicker: nearbyKicker(km), text: s.n, sub: 'לחצו על האזור הנכון במפה',
+    targetRegion: s.r,
+    hint: buddy ? { text: 'באותו אזור נמצא גם: ' + buddy.n, pin: buddy } : { text: REGION_BY_ID[s.r].desc },
+    explain: s.n + ' – ' + REGION_BY_ID[s.r].name + '. ' + s.f
+  };
+}
+const NEARBY_BUILDERS = [nearbyLocateQ, nearbyIdentifyQ, nearbyRegionQ];
+
+/* מסודר מהקרוב לרחוק בכוונה – "קודם מה שממש לידך" */
+function buildNearby(loc) {
+  return sitesByDistance(loc).slice(0, NEARBY_COUNT)
+    .map(({ s, km }, i) => NEARBY_BUILDERS[i % NEARBY_BUILDERS.length](s, km));
+}
+
+/* עטיפת Promise סביב ה-API של הדפדפן, עם דיוק נמוך יחסית – מספיק
+   כדי לדרג אתרים בקנה מידה ארצי, ומהיר וחסכוני יותר בסוללה */
+function getLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('unsupported')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      reject,
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 5 * 60 * 1000 }
+    );
+  });
+}
+function locErrorMsg(e) {
+  if (e && e.message === 'unsupported') return 'הדפדפן הזה לא תומך באיתור מיקום.';
+  if (e && e.code === 1) return 'לא אישרתם גישה למיקום. אפשר לאשר בהגדרות הדפדפן ולנסות שוב.';
+  if (e && e.code === 2) return 'לא הצלחנו לאתר את המיקום כרגע. נסו שוב בעוד רגע.';
+  if (e && e.code === 3) return 'איתור המיקום ארך יותר מדי זמן. נסו שוב.';
+  return 'לא הצלחנו לאתר את המיקום.';
+}
+
 /* ---------- בניית שאלות ---------- */
 function buildQuestions(mode, level, diff = 1) {
   const rnd = mulberry32(hashStr(mode + '#' + diff + '#' + level));
@@ -724,7 +804,11 @@ const MISS_CAP = 80;
 const missKey = q => q.kind + '|' + q.text;
 
 function recordMiss(q) {
-  if (!G || G.daily) return;
+  /* "מה בסביבתי" תלוי במיקום חי – buildQuestions לא יודע לשחזר
+     אותו לפי (מצב, רמה, קושי), ולכן טעות משם הייתה נשארת תקועה
+     ביומן הטעויות לצמיתות, בלי שתרגול הטעויות יוכל אי־פעם לפרוק
+     אותה. כמו יומי, לא נכנס ליומן. */
+  if (!G || G.daily || G.nearby) return;
   /* שאלות הדרכה שמוזרקות תוך כדי אינן חלק מהשלב הבנוי */
   if (q.guide && G.mode !== 'guide') return;
   const rec = { m: G.mode, d: G.diff, l: G.level, k: missKey(q), t: Date.now() };
@@ -839,12 +923,12 @@ function show(id) {
   currentScreen = id;
 }
 
-function toast(msg) {
+function toast(msg, ms = 1900) {
   const t = $('#toast');
   t.textContent = msg;
   t.classList.add('on');
   clearTimeout(t._t);
-  t._t = setTimeout(() => t.classList.remove('on'), 1900);
+  t._t = setTimeout(() => t.classList.remove('on'), ms);
 }
 
 /* --------------------------------------------- HUD ---- */
@@ -953,14 +1037,15 @@ let G = null;
 function startGame(mode, level, opts = {}) {
   clearTimeout(nextTimer);
   const diff = opts.diff || curDiff;
-  const qs = (opts.daily || opts.practice) ? opts.qs : buildQuestions(mode, level, diff);
+  const solo = opts.daily || opts.practice || opts.nearby;
+  const qs = solo ? opts.qs : buildQuestions(mode, level, diff);
   G = {
     mode, level, diff, qs, idx: 0, score: 0, correct: 0,
-    answered: false, results: [], daily: !!opts.daily, practice: !!opts.practice,
+    answered: false, results: [], daily: !!opts.daily, practice: !!opts.practice, nearby: !!opts.nearby,
     used: { fifty: false, hint: false }
   };
   $('#play-score').textContent = '0';
-  $('#lifelines').style.display = (opts.daily || opts.practice) ? 'none' : 'flex';
+  $('#lifelines').style.display = solo ? 'none' : 'flex';
   show('play');
   renderQuestion();
 }
@@ -1295,7 +1380,9 @@ function onMapTapPath(ll) {
 
 /* אחרי מיקום על המפה – שלוש שאלות הדרכה על אותו אתר */
 function maybeInjectGuide(q) {
-  if (!SAVE.guideQ || G.daily) return;
+  /* בסיבוב "מה בסביבתי" זה היה מנפח סיבוב קצר וצפוי לעשרות
+     שאלות בלי אזהרה – נשאר קבוע וקצר כמו כל סיבוב חי אחר */
+  if (!SAVE.guideQ || G.daily || G.nearby) return;
   if (q.kind !== 'mapPoint' || q.guide || q.guideDone) return;
   const site = q.site;
   if (!site) return;
@@ -1533,7 +1620,7 @@ function finishGame() {
   const maxScore = G.qs.length * 125;
   const misses0 = G.results.filter(r => r && !r.ok).length;
   const pct = G.score / maxScore;
-  const solo = G.daily || G.practice;   // סיבוב ללא שלב וללא כוכבים
+  const solo = G.daily || G.practice || G.nearby;   // סיבוב ללא שלב וללא כוכבים
   const stars = solo ? 0 : gradeStars(G.correct / G.qs.length);
 
   let coins = G.correct * GAME_CONFIG.coinsCorrect;
@@ -1571,13 +1658,17 @@ function finishGame() {
     ? (G.correct === G.qs.length ? 'ניקינו את הטעויות! 🎯' : 'תרגול טעויות הושלם')
     : G.daily
       ? (G.correct >= 8 ? 'אתגר יומי – מצוין!' : 'אתגר יומי הושלם')
-      : titles[stars];
+      : G.nearby
+        ? (G.correct === G.qs.length ? 'הכרתם את כל מה שסביבכם! 🎯' : 'כך נראית הסביבה שלכם')
+        : titles[stars];
   $('#res-sub').textContent = G.practice
     ? (left ? 'נשארו ' + left + ' שאלות ביומן הטעויות' : 'יומן הטעויות ריק – כל הכבוד')
     : G.daily
       ? 'חזרו מחר לאתגר חדש'
-      : MODE_BY_ID[G.mode].name + ' · ' +
-        (BY_DIFF.has(G.mode) ? DIFFS[G.diff - 1].name + ' · ' : '') + 'שלב ' + G.level;
+      : G.nearby
+        ? 'האתרים הקרובים ביותר למיקום שלכם עכשיו'
+        : MODE_BY_ID[G.mode].name + ' · ' +
+          (BY_DIFF.has(G.mode) ? DIFFS[G.diff - 1].name + ' · ' : '') + 'שלב ' + G.level;
   $('#res-score').textContent = G.score;
   $('#res-correct').textContent = G.correct + '/' + G.qs.length;
   $('#res-coins').textContent = '+' + coins;
@@ -1596,10 +1687,11 @@ function finishGame() {
 
   const hasNext = !solo && G.level < levelCount(G.mode, G.diff) && stars > 0;
   $('#res-next').style.display = hasNext ? 'block' : 'none';
-  $('#res-again').textContent = G.practice ? (left ? 'עוד סיבוב' : 'לתפריט') : G.daily ? 'לתפריט' : 'שוב';
+  $('#res-again').textContent = G.practice ? (left ? 'עוד סיבוב' : 'לתפריט') : (G.daily || G.nearby) ? 'לתפריט' : 'שוב';
 
   reportAchievements(stars, streakNews);
-  if (stars === 3 || (G.daily && G.correct >= 8) || (G.practice && G.correct === G.qs.length)) { SFX.win(); confetti(); }
+  if (stars === 3 || (G.daily && G.correct >= 8) || (G.practice && G.correct === G.qs.length) ||
+      (G.nearby && G.correct === G.qs.length)) { SFX.win(); confetti(); }
   else if (stars > 0) SFX.coin();
 
   renderHUD();
@@ -1610,7 +1702,7 @@ function finishGame() {
 let lastStreakShout = '';
 function reportAchievements(stars, news) {
   if (!Cloud.enabled || !Cloud.current()) return;
-  if (!G.daily && !G.practice && stars === 3) {
+  if (!G.daily && !G.practice && !G.nearby && stars === 3) {
     Cloud.logEvent('level', MODE_BY_ID[G.mode].name +
       (BY_DIFF.has(G.mode) ? ' · ' + DIFFS[G.diff - 1].name : '') + ' · שלב ' + G.level, 3);
   }
@@ -2271,10 +2363,24 @@ function bind() {
     startGame('daily', 0, { daily: true, qs: d.qs });
     G.dailyKey = d.key;
   };
+  $('#btn-nearby').onclick = async () => {
+    SFX.tap();
+    const btn = $('#btn-nearby');
+    btn.disabled = true; btn.textContent = '📍 מאתר מיקום…';
+    try {
+      const loc = await getLocation();
+      startGame('nearby', 0, { nearby: true, qs: buildNearby(loc) });
+    } catch (e) {
+      SFX.bad();
+      toast(locErrorMsg(e), 4000);
+    } finally {
+      btn.disabled = false; btn.textContent = '📍 מה בסביבתי';
+    }
+  };
   $('#res-again').onclick = () => {
     SFX.tap();
     if (G.practice) { if (missCount()) startPractice(); else goHome(); }
-    else if (G.daily) goHome();
+    else if (G.daily || G.nearby) goHome();
     else startGame(G.mode, G.level, { diff: G.diff });
   };
   $('#res-next').onclick = () => { SFX.tap(); startGame(G.mode, G.level + 1, { diff: G.diff }); };
