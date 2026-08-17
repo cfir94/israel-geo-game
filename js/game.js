@@ -244,10 +244,12 @@ MODES.push({ id: 'folds', name: 'קמר או קער?', icon: '⛰️', color: '#
   desc: 'צירי הקמרים והקערים שבונים את הארץ – חברון, רמאללה, פריעה, שכם, אמיר, הכרמל, החרמון והגולן. המבנה הוא שקובע איזה סלע יהיה בשטח, וכאן לומדים את הקשר – כולל היפוך התבליט בשומרון.' });
 MODES.push({ id: 'bounds', name: 'גבולות ותפרים', icon: '📐', color: '#c084fc', tag: 'מה מפריד בין חבל לחבל',
   desc: 'איפה נגמר הגליל העליון ומתחיל התחתון, מה מפריד בין רמות מנשה לכרמל, ואיפה עובר קו פרשת המים. בדיוק השאלות שנשאלות בבחינה על גבולות חבלי הארץ.' });
+MODES.push({ id: 'history', name: 'ידיעת המדינה', icon: '🎖️', color: '#e0b04a', tag: 'מלחמות, ראשי ממשלה ומבצעים',
+  desc: 'שנות המלחמות, סדר ראשי הממשלה והנשיאים, מבצעים חשובים ורמטכ"לים בזמן אמת – הידע ההיסטורי שנדרש בבחינת ההסמכה.' });
 const MODE_BY_ID = Object.fromEntries(MODES.map(m => [m.id, m]));
 
 /* מצבים שמחולקים לרמות קושי לפי האתרים */
-const BY_DIFF = new Set(['locate', 'identify', 'regionOf', 'guide', 'rockAt']);
+const BY_DIFF = new Set(['locate', 'identify', 'regionOf', 'guide', 'rockAt', 'history']);
 const DIFFS = [
   { id: 1, name: 'קל',     sub: 'אתרי חובה' },
   { id: 2, name: 'בינוני', sub: 'הרחבה' },
@@ -286,6 +288,9 @@ function sitesPerLevel(mode) {
 
 function levelCount(mode, diff = 1) {
   if (mode === 'rockAt') return Math.max(1, Math.ceil(targetsFor(diff).length / sitesPerLevel(mode)));
+  /* evenLevels/evenSlice ולא slice רגיל – אחרת שאלות בקצה כל רמת
+     קושי נשארות יתומות ואף פעם לא עולות (כמו שקרה ב-TRIVIA). */
+  if (mode === 'history') return evenLevels(historyPoolFor(diff).length, sitesPerLevel(mode));
   if (BY_DIFF.has(mode)) {
     return Math.max(1, Math.min(12, Math.floor(poolFor(diff).length / sitesPerLevel(mode))));
   }
@@ -312,6 +317,8 @@ function sitesForLevel(level, diff, mode) {
   if (out.length < n) out = out.concat(pool.slice(0, n - out.length));
   return out;
 }
+
+function historyPoolFor(diff) { return HISTORY_Q.filter(r => r.t === diff); }
 
 /* ---------- אחוז הדיוק של מיקום על המפה ---------- */
 function accuracyPct(km) {
@@ -727,6 +734,18 @@ function buildQuestions(mode, level, diff = 1) {
         explain: t.name + ' – ' + right.name + ' (' + right.group + ', ' + right.period + '). ' + note
       };
     });
+  }
+
+  if (mode === 'history') {
+    const per = sitesPerLevel('history');
+    return evenSlice(historyPoolFor(diff), level, per).map(row => ({
+      kind: 'choice', showMap: false, time: 22,
+      kicker: '🎖️ ידיעת המדינה',
+      text: row.q, sub: '',
+      options: shuffle([{ label: row.a, correct: true }, ...row.w.map(w => ({ label: w }))], rnd),
+      hint: { text: 'חשבו על הרצף הכרונולוגי' },
+      explain: row.x || row.a
+    }));
   }
 
   if (mode === 'rockWhere') {
