@@ -41,7 +41,8 @@ const DEFAULT_SAVE = {
   coins: 120, xp: 0, stars: {}, best: {},
   sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto',
   daily: {}, seen: {}, misses: [], welcomed: 0,
-  streak: 0, bestStreak: 0, shields: 0, lastActive: '', log: {}
+  streak: 0, bestStreak: 0, shields: 0, lastActive: '', log: {},
+  build: null
 };
 
 const Store = (() => {
@@ -2618,6 +2619,7 @@ function bind() {
     startGame('daily', 0, { daily: true, qs: d.qs });
     G.dailyKey = d.key;
   };
+  $('#btn-build').onclick = () => { SFX.tap(); openBuild(); };
   $('#btn-nearby').onclick = async () => {
     SFX.tap();
     const btn = $('#btn-nearby');
@@ -2645,6 +2647,7 @@ function bind() {
   $('#tl-confirm').onclick = () => { SFX.tap(); confirmTimeline(); };
   initDragPin();
   initTimelineDrag();
+  bInit();
 
   $('#sheet-close').onclick = () => { $('#sheet').classList.remove('on'); if (currentScreen === 'atlas') renderAtlasList(); };
   $('#sheet').onclick = e => { if (e.target.id === 'sheet') $('#sheet-close').click(); };

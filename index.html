@@ -84,6 +84,7 @@
     </div>
     <div class="home-extra">
       <button class="ghost-btn" id="btn-nearby">📍 מה בסביבתי</button>
+      <button class="ghost-btn" id="btn-build">🧩 בונים את הארץ</button>
     </div>
     <div class="home-extra" id="board-row" hidden>
       <button class="ghost-btn" id="btn-board">🏅 לוח הקבוצה</button>
@@ -202,6 +203,36 @@
   </section>
 
   <!-- ==================== אטלס ==================== -->
+  <!-- ==================== בונים את הארץ ==================== -->
+  <section class="screen" id="screen-build">
+    <header class="bar">
+      <button class="icon-btn" data-back="home">→</button>
+      <div class="bar-title"><span>🧩</span><h2>בונים את הארץ</h2></div>
+      <button class="icon-btn" id="build-reset" aria-label="איפוס הבנייה">↺</button>
+    </header>
+
+    <div class="bsteps" id="build-steps"></div>
+
+    <div class="bhead">
+      <h3 id="build-title"></h3>
+      <p id="build-text"></p>
+      <p class="bsub" id="build-sub"></p>
+      <span class="bprog" id="build-progress"></span>
+    </div>
+
+    <div class="bcanvas-wrap" id="build-canvas-wrap">
+      <canvas id="build-canvas"></canvas>
+      <div class="bbanner" id="build-banner"></div>
+    </div>
+
+    <div class="bbank" id="build-bank" hidden></div>
+
+    <div class="btools" id="build-draw-tools" hidden>
+      <button class="ghost-btn" id="build-clear">🧽 ניקוי</button>
+      <button class="pill-btn primary" id="build-check">בדיקה</button>
+    </div>
+  </section>
+
   <section class="screen" id="screen-atlas">
     <header class="bar">
       <button class="icon-btn" data-back="home">→</button>
@@ -344,6 +375,7 @@
 <script src="js/structure.js"></script>
 <script src="js/history.js"></script>
 <script src="js/periods.js"></script>
+<script src="js/build.js"></script>
 <script src="js/social.js"></script>
 <script src="js/map.js"></script>
 <script src="js/game.js"></script>
