@@ -755,6 +755,22 @@ function buildQuestions(mode, level, diff = 1) {
   if (mode === 'periods') {
     const per = sitesPerLevel('periods');
     return evenSlice(periodPoolFor(diff), level, per).map(row => {
+      /* הרכבת סדר על ציר הזמן. ההסבר נבנה מהנתונים עצמם – הסדר
+         הנכון עם התאריכים, ואחריו התקופה המשותפת. */
+      if (row.tl) {
+        const list = row.tl.items.map((it, i) => (i + 1) + '. ' + it.label + ' – ' + it.when).join('  ·  ');
+        const per2 = row.tl.period && PERIOD_BY_ID[row.tl.period];
+        return {
+          kind: 'timeline', showMap: false, time: row.tl.time || 45,
+          tl: row.tl,
+          kicker: '📜 סדרו על ציר הזמן',
+          text: row.tl.q || 'מה קדם למה?',
+          sub: 'מוקדם משמאל · מאוחר מימין',
+          hint: { text: 'הראשון בציר: ' + row.tl.items[0].label },
+          explain: list + (per2 ? '  |  כולם ' + per2.name + ' (' + per2.range + ').' : '') +
+            (row.tl.x ? '  ' + row.tl.x : '')
+        };
+      }
       /* שאלת שכנה על ציר הזמן. המסיח הראשון הוא תמיד התקופה
          מהכיוון ההפוך – מי שיודע את הסביבה אבל מתבלבל בכיוון
          ייפול בו, וזה בדיוק מה שהשאלה באה לבדוק. אחריו תקופות
@@ -1250,6 +1266,8 @@ function renderQuestion() {
       b.onclick = () => answerChoice(b, o);
       ans.appendChild(b);
     });
+  } else if (q.kind === 'timeline') {
+    tlRender(q);
   }
 
   startTimer(q.time || 20);
@@ -1499,7 +1517,178 @@ function answerChoice(btn, opt) {
 /* --------- הצבת הסיכה, אישור, ואחוזי דיוק --------- */
 let placedLL = null;
 
+/* ------------------------------------------ ציר הזמן ----
+   הרכבת סדר כרונולוגי: בנק אירועים למטה, משבצות על הציר למעלה.
+   הצבה בלחיצה (הדרך האמינה בנייד, וגם נגישה למקלדת) ובגרירה
+   (למקום מדויק ולסידור מחדש). הסדר הנכון הוא סדר המערך items. */
+let tlState = null;
+
+function tlItems(q) { return q.tl.items; }
+
+function tlRender(q) {
+  $('#timeline').hidden = false;
+  $('#tl-from').textContent = q.tl.from;
+  $('#tl-to').textContent = q.tl.to;
+  $('#tl-hint').hidden = false;
+  const n = tlItems(q).length;
+  /* סדר הבנק מעורבב אך יציב – אותה שאלה תיראה תמיד אותו דבר */
+  tlState = {
+    placed: new Array(n).fill(null), graded: false,
+    order: shuffle(tlItems(q).map((_, i) => i), mulberry32(hashStr('tl|' + q.text)))
+  };
+  tlPaint(q);
+}
+
+function tlChip(q, idx, inSlot) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'tl-chip' + (inSlot ? ' in' : '');
+  b.textContent = tlItems(q)[idx].label;
+  b.dataset.i = idx;
+  return b;
+}
+
+function tlPaint(q) {
+  const slots = $('#tl-slots'), bank = $('#tl-bank');
+  slots.innerHTML = ''; bank.innerHTML = '';
+
+  tlState.placed.forEach((idx, s) => {
+    const d = document.createElement('div');
+    d.className = 'tl-slot' + (idx === null ? ' empty' : '');
+    d.dataset.slot = s;
+    if (idx === null) {
+      const num = document.createElement('span');
+      num.className = 'tl-num'; num.textContent = s + 1;
+      d.appendChild(num);
+    } else {
+      d.appendChild(tlChip(q, idx, true));
+    }
+    slots.appendChild(d);
+  });
+
+  tlState.order.forEach(i => {
+    if (!tlState.placed.includes(i)) bank.appendChild(tlChip(q, i, false));
+  });
+
+  $('#tl-confirm').disabled = tlState.placed.some(x => x === null);
+}
+
+/* לחיצה: מהבנק אל המשבצת הפנויה הראשונה, וממשבצת חזרה לבנק */
+function tlTap(q, idx, fromSlot) {
+  if (tlState.graded || G.answered) return;
+  if (fromSlot !== null) { tlState.placed[fromSlot] = null; }
+  else {
+    const free = tlState.placed.indexOf(null);
+    if (free < 0) return;
+    tlState.placed[free] = idx;
+  }
+  SFX.tap();
+  tlPaint(q);
+}
+
+/* הצבה במשבצת מסוימת. אם היא תפוסה, השבב שהיה בה מתחלף במקומות
+   עם הנגרר – כך שגרירה בין שתי משבצות היא סידור מחדש, לא דריסה. */
+function tlDrop(q, idx, slot) {
+  if (tlState.graded || G.answered) return;
+  const from = tlState.placed.indexOf(idx);
+  const evicted = tlState.placed[slot];
+  tlState.placed[slot] = idx;
+  if (from >= 0 && from !== slot) tlState.placed[from] = evicted;
+  SFX.tap();
+  tlPaint(q);
+}
+
+/* גרירה ב-Pointer Events. מתחת לסף התנועה זו נשארת לחיצה רגילה,
+   כדי ששתי הדרכים יחיו יחד בלי להפריע זו לזו. */
+function initTimelineDrag() {
+  const tl = $('#timeline');
+  let drag = null;
+
+  tl.addEventListener('pointerdown', e => {
+    const chip = e.target.closest('.tl-chip');
+    if (!chip || !tlState || tlState.graded || (G && G.answered)) return;
+    const r = chip.getBoundingClientRect();
+    drag = {
+      chip, idx: +chip.dataset.i, moved: false,
+      dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height,
+      slot: chip.parentElement.classList.contains('tl-slot') ? +chip.parentElement.dataset.slot : null
+    };
+    tl.setPointerCapture(e.pointerId);
+  });
+
+  tl.addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (!drag.moved) {
+      if (Math.hypot(e.clientX - (drag.dx + drag.chip.getBoundingClientRect().left),
+                     e.clientY - (drag.dy + drag.chip.getBoundingClientRect().top)) < 7) return;
+      drag.moved = true;
+      drag.chip.classList.add('flying');
+      drag.chip.style.width = drag.w + 'px';
+      drag.chip.style.height = drag.h + 'px';
+    }
+    e.preventDefault();
+    drag.chip.style.left = (e.clientX - drag.dx) + 'px';
+    drag.chip.style.top = (e.clientY - drag.dy) + 'px';
+    const over = tlSlotAt(e.clientX, e.clientY);
+    $$('#tl-slots .tl-slot').forEach(s => s.classList.toggle('over', s === over));
+  });
+
+  const end = e => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    $$('#tl-slots .tl-slot').forEach(s => s.classList.remove('over'));
+    if (!d.moved) { tlTap(G.qs[G.idx], d.idx, d.slot); return; }
+    d.chip.classList.remove('flying');
+    d.chip.style.cssText = '';
+    const slot = tlSlotAt(e.clientX, e.clientY);
+    const q = G.qs[G.idx];
+    if (slot) tlDrop(q, d.idx, +slot.dataset.slot);
+    else if (d.slot !== null) tlTap(q, d.idx, d.slot);   /* נגרר החוצה – חזרה לבנק */
+    else tlPaint(q);
+  };
+  tl.addEventListener('pointerup', end);
+  tl.addEventListener('pointercancel', end);
+}
+
+function tlSlotAt(x, y) {
+  return document.elementsFromPoint(x, y).find(el => el.classList && el.classList.contains('tl-slot')) || null;
+}
+
+function confirmTimeline() {
+  const q = G.qs[G.idx];
+  if (!q || !q.tl || G.answered || !tlState || tlState.graded) return;
+  if (tlState.placed.some(x => x === null)) return;
+  tlState.graded = true;
+  const ok = tlState.placed.every((idx, s) => idx === s);
+  tlReveal(q, ok);
+  award(q, ok ? 100 : 0, ok,
+    ok ? 'סדר נכון!' : 'הסדר לא מדויק – הנה הסדר הנכון');
+}
+
+/* אחרי התשובה: כל משבצת מסומנת נכון/שגוי, ואם טעו – הציר נבנה
+   מחדש בסדר הנכון, עם התאריך של כל אירוע. */
+function tlReveal(q, ok) {
+  const slots = $('#tl-slots');
+  if (!ok) {
+    slots.innerHTML = '';
+    tlItems(q).forEach((it, s) => {
+      const d = document.createElement('div');
+      d.className = 'tl-slot ' + (tlState.placed[s] === s ? 'ok' : 'bad');
+      d.appendChild(tlChip(q, s, true));
+      slots.appendChild(d);
+    });
+  } else {
+    $$('#tl-slots .tl-slot').forEach(s => s.classList.add('ok'));
+  }
+  $('#tl-confirm').disabled = true;
+  $('#tl-hint').hidden = true;
+  $('#tl-bank').innerHTML = '';
+}
+
 function resetPlacement() {
+  const tl = $('#timeline');
+  if (tl) { tl.hidden = true; $('#tl-confirm').disabled = true; }
+  tlState = null;
   placedLL = null;
   $('#dock').classList.remove('on');
   $('#dock-pin').classList.remove('placed');
@@ -1628,6 +1817,10 @@ function timeUp() {
   } else if (q.kind === 'geoArea') {
     GEO_AREAS.filter(a => a.rock === q.rock).forEach(a => GameMap.setAreaState(a.id, 'correct'));
     award(q, 0, false, 'נגמר הזמן! ' + ROCKS[q.rock].where);
+  } else if (q.kind === 'timeline') {
+    if (tlState) tlState.graded = true;
+    tlReveal(q, false);
+    award(q, 0, false, 'נגמר הזמן – הנה הסדר הנכון');
   } else {
     GameMap.setRegionState(q.targetRegion, 'correct');
     award(q, 0, false, 'נגמר הזמן! ' + REGION_BY_ID[q.targetRegion].name);
@@ -2449,7 +2642,9 @@ function bind() {
   $$('.ll').forEach(b => b.onclick = () => useLifeline(b.dataset.ll));
   $('#feedback').onclick = advanceNow;
   $('#btn-confirm').onclick = () => { SFX.tap(); confirmPlacement(); };
+  $('#tl-confirm').onclick = () => { SFX.tap(); confirmTimeline(); };
   initDragPin();
+  initTimelineDrag();
 
   $('#sheet-close').onclick = () => { $('#sheet').classList.remove('on'); if (currentScreen === 'atlas') renderAtlasList(); };
   $('#sheet').onclick = e => { if (e.target.id === 'sheet') $('#sheet-close').click(); };

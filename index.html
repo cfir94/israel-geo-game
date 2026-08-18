@@ -153,6 +153,20 @@
 
     <div class="rock-legend" id="play-legend" hidden></div>
 
+    <!-- ציר זמן להרכבה. הציר עצמו LTR – מוקדם משמאל, מאוחר מימין –
+         גם בתוך עמוד RTL, כי כך מקובל לצייר ציר זמן. -->
+    <div class="tl" id="timeline" hidden>
+      <div class="tl-axis">
+        <span class="tl-year" id="tl-from"></span>
+        <span class="tl-track"></span>
+        <span class="tl-year" id="tl-to"></span>
+      </div>
+      <div class="tl-slots" id="tl-slots"></div>
+      <div class="tl-bank" id="tl-bank"></div>
+      <p class="tl-hint" id="tl-hint">לחצו על אירוע כדי להציב אותו בתור, או גררו אותו למקום מדויק</p>
+      <button class="pill-btn primary tl-go" id="tl-confirm" disabled>אישור הסדר</button>
+    </div>
+
     <div class="answers" id="answers"></div>
 
     <div class="lifelines" id="lifelines">

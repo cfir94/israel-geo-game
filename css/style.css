@@ -429,6 +429,67 @@ p { margin: 0; }
 .ll b::after { content: ' 🪙'; }
 .ll.used, .ll:disabled { opacity: .32; pointer-events: none; }
 
+/* ------------------------------------------ ציר הזמן ---- */
+/* הרכיב כולו LTR: המשבצת הראשונה משמאל היא המוקדמת ביותר.
+   הטקסט העברי בתוך כל שבב חוזר ל-RTL בנפרד. */
+.tl { direction: ltr; margin-bottom: 12px; flex-shrink: 0; }
+.tl-axis { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tl-year {
+  flex: 0 0 auto; font-size: 11.5px; font-weight: 800; color: var(--txt-dim);
+  font-variant-numeric: tabular-nums; direction: rtl;
+}
+.tl-track {
+  flex: 1; height: 3px; border-radius: 99px; position: relative;
+  background: linear-gradient(90deg, var(--teal), var(--gold));
+}
+.tl-track::after {
+  content: ''; position: absolute; inset-inline-end: -1px; top: 50%;
+  transform: translateY(-50%);
+  border-inline-start: 7px solid var(--gold);
+  border-block: 5px solid transparent;
+}
+
+.tl-slots { display: flex; gap: 7px; margin-bottom: 12px; }
+.tl-slot {
+  flex: 1 1 0; min-width: 0; min-height: 58px;
+  border-radius: var(--r-md); display: grid; place-items: center; padding: 4px;
+  border: 1.5px dashed var(--line); background: color-mix(in srgb, var(--card) 45%, transparent);
+  transition: border-color .15s, background .15s, transform .12s;
+}
+.tl-slot.empty .tl-num {
+  font-size: 15px; font-weight: 800; color: var(--txt-dim); opacity: .5;
+  font-variant-numeric: tabular-nums;
+}
+.tl-slot.over { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 16%, transparent); transform: scale(1.04); }
+.tl-slot.ok    { border-style: solid; border-color: var(--ok);  background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.tl-slot.bad   { border-style: solid; border-color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+
+.tl-bank { display: flex; flex-wrap: wrap; gap: 7px; min-height: 4px; }
+.tl-chip {
+  direction: rtl; font: inherit; font-size: 13px; font-weight: 700; color: var(--txt);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 9px 12px; cursor: grab; text-align: center; line-height: 1.35;
+  transition: transform .12s, border-color .2s, opacity .2s;
+  touch-action: none;   /* הגרירה מנוהלת ב-Pointer Events, בלי גלילה מתחרה */
+}
+.tl-chip:active { transform: scale(.96); }
+.tl-chip.in { width: 100%; height: 100%; display: grid; place-items: center; font-size: 12px; padding: 5px 6px; }
+.tl-chip.ghost { opacity: .35; }
+.tl-chip.flying {
+  position: fixed; z-index: 90; pointer-events: none; cursor: grabbing;
+  box-shadow: 0 14px 30px -12px rgba(0,0,0,.6); border-color: var(--teal);
+}
+.tl-slot.ok .tl-chip, .tl-slot.bad .tl-chip { background: transparent; border-color: transparent; }
+
+.tl-hint { direction: rtl; font-size: 11.5px; color: var(--txt-dim); margin: 9px 0 0; text-align: center; }
+.tl-go { direction: rtl; width: 100%; margin-top: 10px; }
+/* כשעוד לא הוצבו כל הפריטים – כפתור שטוח ואפור, ולא הגרדיאנט
+   הבולט. הבדל של אטימות בלבד עדיין נראה כמו כפתור פעיל. */
+.tl-go:disabled {
+  background: var(--track); color: var(--txt-dim);
+  box-shadow: none; opacity: .75; pointer-events: none;
+}
+
 /* --------------------------------------------- משוב ---- */
 .feedback {
   min-height: 74px; border-radius: var(--r-md);

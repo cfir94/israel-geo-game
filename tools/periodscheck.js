@@ -24,8 +24,19 @@ const {chromium}=require('playwright');const sleep=ms=>new Promise(r=>setTimeout
    [1,2,3].forEach(d=>{
      for(let lv=1; lv<=levelCount('periods',d); lv++){
        let qs=[]; try{ qs = buildQuestions('periods', lv, d); } catch(e){ out.questions.push({err:e.message, d, lv}); continue; }
-       qs.forEach(q => out.questions.push({d, lv, kind:q.kind, opts:q.options.length,
-         correct: q.options.filter(o=>o.correct).length, text:q.text.slice(0,40), hasExplain: !!q.explain}));
+       qs.forEach(q => {
+         /* שאלת ציר זמן אין לה options – מאמתים את items במקום */
+         if (q.kind === 'timeline') {
+           out.questions.push({d, lv, kind:q.kind, opts:4, correct:1,
+             items:(q.tl.items||[]).length,
+             datedAll:(q.tl.items||[]).every(i=>i.label&&i.when),
+             ends: !!(q.tl.from && q.tl.to),
+             text:q.text.slice(0,40), hasExplain: !!q.explain});
+           return;
+         }
+         out.questions.push({d, lv, kind:q.kind, opts:q.options.length,
+           correct: q.options.filter(o=>o.correct).length, text:q.text.slice(0,40), hasExplain: !!q.explain});
+       });
      }
    });
    return out;
@@ -34,7 +45,8 @@ const {chromium}=require('playwright');const sleep=ms=>new Promise(r=>setTimeout
  console.log('סדר תקופות:', r.periodOrder.join(' < '));
  console.log('שלבים לכל קושי:', JSON.stringify(r.levels));
  console.log('order id-ים שגויים:', r.badOrderIds.length ? r.badOrderIds.join(',') : 'אין');
- const bad = r.questions.filter(q => q.err || (q.opts !== 2 && q.opts !== 4) || q.correct !== 1 || !q.hasExplain);
+ const bad = r.questions.filter(q => q.err || (q.opts !== 2 && q.opts !== 4) || q.correct !== 1 || !q.hasExplain
+   || (q.kind==='timeline' && (q.items < 3 || !q.datedAll || !q.ends)));
  console.log('שאלות שנבנו בפועל:', r.questions.length, '· בעייתיות:', bad.length);
  bad.forEach(b => console.log('  ✗', JSON.stringify(b)));
  console.log('שגיאות דפדפן:', errs.length ? errs.join(' | ') : 'אין');
