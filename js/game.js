@@ -755,16 +755,29 @@ function buildQuestions(mode, level, diff = 1) {
   if (mode === 'periods') {
     const per = sitesPerLevel('periods');
     return evenSlice(periodPoolFor(diff), level, per).map(row => {
-      if (row.order) {
-        const [A, B] = row.order.map(id => PERIOD_BY_ID[id]);
-        const earlier = A.i < B.i ? A : B, later = A.i < B.i ? B : A;
+      /* שאלת שכנה על ציר הזמן. המסיח הראשון הוא תמיד התקופה
+         מהכיוון ההפוך – מי שיודע את הסביבה אבל מתבלבל בכיוון
+         ייפול בו, וזה בדיוק מה שהשאלה באה לבדוק. אחריו תקופות
+         רחוקות יותר באותו כיוון. */
+      if (row.after || row.before) {
+        const isAfter = !!row.after;
+        const base = PERIOD_BY_ID[row.after || row.before];
+        const step = isAfter ? 1 : -1;
+        const correct = PERIODS[base.i + step];
+        const wrong = [base.i - step, base.i + step * 2, base.i + step * 3, base.i - step * 2]
+          .map(i => PERIODS[i])
+          .filter(p => p && p.id !== correct.id)
+          .slice(0, 3);
         return {
-          kind: 'choice', showMap: false, time: 20,
-          kicker: '📜 מה קדם למה?',
-          text: 'איזו משתי התקופות התרחשה קודם?', sub: '',
-          options: shuffle([{ label: earlier.name, correct: true }, { label: later.name }], rnd),
-          hint: { text: earlier.range + ' לעומת ' + later.range },
-          explain: earlier.name + ' (' + earlier.range + ') קדמה ל' + later.name + ' (' + later.range + ').'
+          kind: 'choice', showMap: false, time: 22,
+          kicker: '📜 מה בא אחר כך?',
+          text: 'איזו תקופה באה מיד ' + (isAfter ? 'אחרי' : 'לפני') + ' ' + base.name + '?',
+          sub: base.range,
+          options: shuffle([{ label: correct.name, correct: true },
+            ...wrong.map(p => ({ label: p.name }))], rnd),
+          hint: { text: 'שימו לב לכיוון – קדימה בזמן או אחורה' },
+          explain: (isAfter ? 'אחרי ' : 'לפני ') + base.name + ' (' + base.range + ') ' +
+            (isAfter ? 'באה ' : 'הייתה ') + correct.name + ' (' + correct.range + ').'
         };
       }
       return {
