@@ -18,6 +18,15 @@ function el(tag, attrs = {}, parent = null) {
 const LAT0 = 31.5;
 const KX = Math.cos(LAT0 * Math.PI / 180); // תיקון קנה מידה לאורך
 
+/* תבליט השטח – תמונה אחת שנבנתה מראש ממודל גובה (SRTM/terrarium)
+   בהיטל של המפה: גוני גובה מקרקעית הבקע ועד החרמון, כפול הצללה.
+   התיחום כאן חייב להיות זהה לזה שבו נחתכה התמונה. */
+const TOPO = {
+  src: 'assets/topo.webp',
+  minLon: 34.198, maxLon: 35.915,
+  minLat: 29.471, maxLat: 33.350
+};
+
 function pointInPoly(lon, lat, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -76,6 +85,7 @@ function haversine(lat1, lon1, lat2, lon2) {
 /* --------------------------------------------------- המנוע ---- */
 const GameMap = (() => {
   let svg, root, layers = {}, box, world, tapHandler = null;
+  let topoImg = null, topoVisible = false, topoLoaded = false;
   let pinSeq = 0;
   let regionCenters = {};
 
@@ -126,7 +136,11 @@ const GameMap = (() => {
     const defs = el('defs', {}, svg);
 
     /* גרדיאנטים */
-    const seaG = el('linearGradient', { id: 'g-sea', x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+    /* בקואורדינטות העולם ולא ביחס למלבן: כך אפשר להגדיל את מלבן הים
+       שיכסה גם את הפסים שנוצרים מ-preserveAspectRatio, בלי שהגרדיאנט
+       עצמו יימתח ויזוז ביחס למפה. */
+    const seaG = el('linearGradient', { id: 'g-sea', gradientUnits: 'userSpaceOnUse',
+      x1: 0, y1: 0, x2: 0, y2: H }, defs);
     el('stop', { offset: '0%', class: 'sea-1' }, seaG);
     el('stop', { offset: '100%', class: 'sea-2' }, seaG);
 
@@ -155,8 +169,10 @@ const GameMap = (() => {
 
     root = el('g', {}, svg);
 
-    /* ים ורקע */
-    el('rect', { x: -50, y: -50, width: W + 100, height: H + 100, fill: 'url(#g-sea)' }, root);
+    /* ים ורקע. המלבן חורג הרבה מעבר ל-viewBox כדי לצבוע גם את הפסים
+       שנשארים בצדדים כשיחס המסך שונה מיחס המפה – שם הציץ קודם רקע
+       שטוח של ה-CSS, וניכר תפר מול הגרדיאנט. */
+    el('rect', { x: -W * 2, y: -H, width: W * 5, height: H * 3, fill: 'url(#g-sea)' }, root);
 
     layers.neighbours = el('g', { class: 'lyr-neighbours' }, root);
     GEO.neighbours.forEach(r => el('path', {
@@ -167,6 +183,17 @@ const GameMap = (() => {
     layers.land = el('g', { class: 'lyr-land' }, root);
     [GEO.israel, GEO.westbank, GEO.gaza, GEO.golan].forEach(r =>
       el('path', { d: pathOf(r), fill: 'url(#g-land)' }, layers.land));
+
+    /* תבליט – יושב מעל היבשה ומתחת לאזורים, כך שגופי המים, הגבולות
+       והדגשת האזורים נשארים קריאים מעליו. נטען רק כשמדליקים אותו. */
+    layers.topo = el('g', { class: 'lyr-topo', 'clip-path': 'url(#clip-land)' }, root);
+    topoImg = el('image', {
+      x: projX(TOPO.minLon).toFixed(1), y: projY(TOPO.maxLat).toFixed(1),
+      width: ((TOPO.maxLon - TOPO.minLon) * KX * SCALE).toFixed(1),
+      height: ((TOPO.maxLat - TOPO.minLat) * SCALE).toFixed(1),
+      preserveAspectRatio: 'none'
+    }, layers.topo);
+    layers.topo.style.display = 'none';
 
     /* אזורים – מצוירים בסדר הפוך כך שהראשון ברשימה נמצא למעלה,
        בהתאמה לסדר בדיקת הלחיצה ב-regionAt() */
@@ -511,19 +538,24 @@ const GameMap = (() => {
     const v = parseFloat(getComputedStyle(svg).getPropertyValue('--region-op-scale'));
     return isNaN(v) ? 1 : v;
   }
+  /* כשהתבליט דולק, צבעי חבלי הארץ מתחרים בגוני הגובה ושתי השכבות
+     יוצאות עכורות. מנמיכים רק את הצבע הבסיסי: גבולות האזורים עדיין
+     נקראים מקו המתאר, ואזור מודגש – שהוא משוב על תשובה – נשאר במלוא
+     עוצמתו. כל כתיבת שקיפות עוברת כאן, ולכן די בנקודה אחת. */
+  const regionOp = state =>
+    (state ? 0.85 : baseOp * (topoVisible ? 0.3 : 1)) * regionScale();
+
   function showRegions(on, opacity = 0.42) {
     baseOp = opacity;
-    const k = regionScale();
     layers.regions.querySelectorAll('.region').forEach(p => {
-      p.style.opacity = on ? opacity * k : 0;
+      p.style.opacity = on ? regionOp(null) : 0;
     });
   }
-  /* נקרא אחרי החלפת ערכת נושא – עוצמת הצבע שונה על רקע בהיר */
+  /* נקרא אחרי החלפת ערכת נושא או הדלקת תבליט – עוצמת הצבע שונה */
   function refreshTheme() {
-    const k = regionScale();
     layers.regions.querySelectorAll('.region').forEach(p => {
       if (parseFloat(p.style.opacity) > 0) {
-        p.style.opacity = (p.classList.length > 1 ? 0.85 : baseOp) * k;
+        p.style.opacity = regionOp(p.classList.length > 1 ? 'on' : null);
       }
     });
   }
@@ -531,16 +563,36 @@ const GameMap = (() => {
     const p = layers.regions.querySelector(`[data-region="${id}"]`);
     if (!p) return;
     p.setAttribute('class', 'region ' + (state || ''));
-    p.style.opacity = (state ? 0.85 : baseOp) * regionScale();
+    p.style.opacity = regionOp(state);
   }
   function resetRegionStates() {
     layers.regions.querySelectorAll('.region').forEach(p => {
       p.setAttribute('class', 'region');
-      p.style.opacity = baseOp * regionScale();
+      p.style.opacity = regionOp(null);
     });
   }
 
   /* ---------------------------------------- שכבה גיאולוגית -- */
+  /* ------------------------------------------------ תבליט ---- */
+  /* התמונה נטענת רק בפעם הראשונה שמדליקים – מי שלא נכנס למצבי
+     השטח לא משלם עליה כלל. */
+  function showTopo(on) {
+    if (!layers.topo) return;
+    topoVisible = !!on;
+    if (on && !topoLoaded) {
+      topoLoaded = true;
+      topoImg.setAttribute('href', TOPO.src);
+      topoImg.setAttributeNS('http://www.w3.org/1999/xlink', 'href', TOPO.src);
+    }
+    layers.topo.style.display = on ? '' : 'none';
+    /* היבשה שמתחת מיותרת כשהתבליט דולק ומציצה בקצוות. מסתירים דרך
+       מחלקה ולא בסגנון מוטבע, אחרת נדרס הכלל המקביל של השכבה
+       הגיאולוגית כששתיהן נדלקות ונכבות. */
+    svg.classList.toggle('topo-on', !!on);
+    refreshTheme();
+  }
+  const topoOn = () => topoVisible;
+
   /* צבעי התקן צריכים להיקרא כפי שהם, ולכן השכבה אטומה כמעט לגמרי
      והיבשה שמתחתיה מוסתרת. שקיפות מערבבת את הגוונים ומעכירה אותם. */
   let geoOp = 0.95, geoVisible = false;
@@ -732,6 +784,7 @@ const GameMap = (() => {
     clientToLatLon, latLonToClient, projX, projY,
     regionAt, onLand, pin, line, clearPins,
     showRegions, setRegionState, resetRegionStates, showRegionLabels,
+    showTopo, topoOn,
     showGeology, setAreaState, resetAreaStates, areaAt, fitArea,
     probeArea, revealGeology, markArea,
     showPaths, hidePaths, setPathState, pathAt, pathMid, fitPaths,

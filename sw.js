@@ -11,7 +11,7 @@
    ============================================================= */
 
 /* מעלים את המספר בכל שינוי ברשימה, אחרת מטמון ישן שורד את העדכון */
-const VERSION = 'geo-game-v5';
+const VERSION = 'geo-game-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -32,7 +32,8 @@ const ASSETS = [
   './js/social.js',
   './js/map.js',
   './js/game.js',
-  './assets/icon.png'
+  './assets/icon.png',
+  './assets/topo.webp'
 ];
 
 self.addEventListener('install', e => {

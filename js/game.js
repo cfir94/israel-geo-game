@@ -39,7 +39,7 @@ const KEY = 'israel-geo-game-v1';
 const DEFAULT_CLASS = 'קמ"ד שרון 26-27';
 const DEFAULT_SAVE = {
   coins: 120, xp: 0, stars: {}, best: {},
-  sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto',
+  sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto', topo: 'auto',
   daily: {}, seen: {}, misses: [], welcomed: 0,
   streak: 0, bestStreak: 0, shields: 0, lastActive: '', log: {},
   build: null
@@ -188,6 +188,49 @@ function applyTheme() {
   if (typeof GameMap !== 'undefined' && GameMap.refreshTheme) {
     try { GameMap.refreshTheme(); } catch (e) {}
   }
+}
+
+/* ---------------------------------------- תבליט השטח ---- */
+/* המצבים שבהם השאלה עצמה נקראת מצורת השטח: צירי הקמרים והקערים,
+   התפרים שבין חבלי הארץ, אגני הניקוז והדרכים העתיקות שנצמדו
+   למעברים – ובכולם התבליט הוא חלק מהתשובה, לא קישוט.
+
+   דווקא במצבי הסלע הוא כבוי: המפה הגיאולוגית תופסת את אותו שטח,
+   ושתי שכבות צבע זו על זו הופכות את שתיהן לבלתי קריאות. מאותה סיבה
+   הוא כבוי גם במצבי האזורים – שם צבע חבל הארץ הוא נושא השאלה ולא
+   רקע, ומי שרוצה בכל זאת לראות תבליט לוחץ על הכפתור שעל המפה. */
+const TOPO_MODES = new Set(['folds', 'bounds', 'streams', 'routes']);
+
+function topoWanted() {
+  const pref = SAVE.topo || 'auto';
+  if (pref === 'on') return true;
+  if (pref === 'off') return false;
+  if (currentScreen === 'atlas') return true;
+  /* "מה בסביבתי" מסובב שלוש צורות שאלה, ורק אחת מהן ברשימה למעלה –
+     בלי הקיצור הזה התבליט היה נדלק ונכבה כל שאלה שלישית. ממילא זה
+     המצב שבו הוא הכי שימושי: עומדים בשטח ומסתכלים על מה שמסביב. */
+  if (G && G.nearby) return true;
+  return !!(G && G.mode && TOPO_MODES.has(G.mode));
+}
+
+function applyTopo() {
+  if (typeof GameMap === 'undefined' || !GameMap.showTopo) return;
+  const on = topoWanted();
+  GameMap.showTopo(on);
+  const b = $('#topo-toggle');
+  if (b) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  $$('#topo-seg button').forEach(x =>
+    x.classList.toggle('on', x.dataset.topoOpt === (SAVE.topo || 'auto')));
+}
+
+/* הכפתור שעל המפה קובע מפורשות, ולכן יוצא מ"לפי המצב": שתי
+   לחיצות מחזירות למצב שממנו התחלנו ולא לאוטומטי, וזה בכוונה –
+   מי שנגע בכפתור מצפה שהבחירה תישאר. */
+function toggleTopo() {
+  SAVE.topo = topoWanted() ? 'off' : 'on';
+  persist();
+  applyTopo();
+  toast(SAVE.topo === 'on' ? '⛰️ מפת התבליט דולקת' : 'מפת התבליט כבויה');
 }
 
 /* --------------------------------------------- אודיו ---- */
@@ -1165,6 +1208,7 @@ function renderQuestion() {
 
   renderDots();
   resetPlacement();
+  applyTopo();
 
   $('#prompt-kicker').textContent = q.kicker;
   $('#prompt-text').textContent = q.text;
@@ -2013,6 +2057,7 @@ function openAtlas() {
   GameMap.showRegionLabels(true);
   GameMap.fitAll(false);
   GameMap.setTap(null);
+  applyTopo();
   renderAtlasChips();
   renderAtlasList();
 }
@@ -2683,6 +2728,10 @@ function bind() {
   $('#zoom-in').onclick = () => { GameMap.zoomBy(1.7); SFX.tap(); };
   $('#zoom-out').onclick = () => { GameMap.zoomBy(1 / 1.7); SFX.tap(); };
   $('#zoom-reset').onclick = () => { GameMap.fitAll(true); SFX.tap(); };
+  $('#topo-toggle').onclick = () => { SFX.tap(); toggleTopo(); };
+  $$('#topo-seg button').forEach(b => b.onclick = () => {
+    SAVE.topo = b.dataset.topoOpt; persist(); applyTopo(); SFX.tap();
+  });
 
   $('#opt-labels').onchange = e => { SAVE.labels = e.target.checked ? 1 : 0; persist(); };
   $('#opt-guideq').onchange = e => {
@@ -2740,6 +2789,7 @@ function boot() {
   $('#opt-labels').checked = !!SAVE.labels;
   $('#opt-guideq').checked = !!SAVE.guideQ;
   bind();
+  applyTopo();
   renderHUD();
   renderModes();
   show('home');

@@ -128,6 +128,7 @@
         <button id="zoom-in" aria-label="התקרבות">+</button>
         <button id="zoom-out" aria-label="התרחקות">−</button>
         <button id="zoom-reset" class="reset" aria-label="תצוגה מלאה">⛶</button>
+        <button id="topo-toggle" class="topo" aria-label="מפת תבליט" aria-pressed="false">⛰️</button>
       </div>
       <div class="zoom-hint" id="zoom-hint">צביטה בשתי אצבעות מתקרבת · גרירה מזיזה</div>
       <div class="acc-badge" id="acc-badge">
@@ -348,6 +349,13 @@
       <label class="switch"><span>צלילים</span><input type="checkbox" id="opt-sound" checked></label>
       <label class="switch"><span>רטט</span><input type="checkbox" id="opt-haptic" checked></label>
       <label class="switch"><span>שמות אזורים על המפה</span><input type="checkbox" id="opt-labels" checked></label>
+      <p class="set-label">מפת תבליט</p>
+      <div class="seg" id="topo-seg">
+        <button data-topo-opt="auto"><span>⛰️</span>לפי המצב</button>
+        <button data-topo-opt="on"><span>👁️</span>תמיד</button>
+        <button data-topo-opt="off"><span>🚫</span>כבויה</button>
+      </div>
+      <p class="fineprint">"לפי המצב" מדליק את התבליט היכן שהשאלה היא על צורת השטח: קמרים וקערים, גבולות ותפרים, נחלים ומעיינות, דרכים עתיקות – וגם באטלס וב"מה בסביבתי". בכל מסך אחר אפשר להדליק ולכבות בכפתור ⛰️ שעל המפה.</p>
       <label class="switch"><span>שאלות הדרכה אחרי כל מיקום</span><input type="checkbox" id="opt-guideq" checked></label>
       <div class="shield-row">
         <div>

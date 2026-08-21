@@ -833,6 +833,11 @@ p { margin: 0; }
 }
 .zoomer button:active { transform: scale(.9); }
 .zoomer button.reset { font-size: 15px; }
+.zoomer button.topo { font-size: 16px; opacity: .55; }
+.zoomer button.topo.on {
+  opacity: 1; border-color: var(--teal);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 30%, transparent);
+}
 .zoom-hint {
   position: absolute; inset-block-start: 10px; inset-inline-start: 10px;
   background: var(--hud-bg); backdrop-filter: blur(8px);
@@ -891,6 +896,17 @@ p { margin: 0; }
 .board-row b { flex: 1; font-size: 14.5px; }
 .board-row .sc { font-size: 13px; font-weight: 800; color: var(--gold); direction: ltr; unicode-bidi: isolate; }
 .board-empty { text-align: center; color: var(--txt-dim); font-size: 13.5px; padding: 30px 10px; line-height: 1.6; }
+
+/* ---------- שכבת תבליט ---------- */
+/* התמונה נבנתה בגוני מצב בהיר. אי אפשר להפוך אותה במצב כהה – ירוק
+   וחום הפוכים אינם טופוגרפיה – ולכן רק מכהים ומנמיכים רוויה, כדי
+   שהסיכות והתוויות הבהירות יישארו קריאות מעליה. */
+.lyr-topo { pointer-events: none; }
+.gamemap.topo-on .lyr-land { opacity: 0; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .lyr-topo { filter: brightness(.66) saturate(.8); }
+}
+:root[data-theme="dark"] .lyr-topo { filter: brightness(.66) saturate(.8); }
 
 /* ---------- שכבה גיאולוגית ---------- */
 .geo-area { transition: opacity .3s, filter .3s; }
