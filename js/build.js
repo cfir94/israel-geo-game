@@ -78,13 +78,18 @@ let bTask = null;        /* המשימה הנוכחית בתוך השלב */
 let bDrag = null;        /* גרירה פעילה של שבב */
 let bFlash = null;       /* אנימציית משוב קצרה */
 
-function bFit() {
+function bFit(force) {
   const host = $('#build-canvas-wrap');
   if (!host || !bCv) return;
   const r = host.getBoundingClientRect();
+  const w = Math.max(80, Math.round(r.width));
+  const h = Math.max(80, Math.round(r.height));
+  /* המידה לא השתנתה – אין מה לבנות מחדש, וגם אין סכנה ללולאה מול
+     ה-ResizeObserver שקורא לכאן. */
+  if (!force && w === bW && h === bH) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  bW = Math.max(80, Math.round(r.width));
-  bH = Math.max(80, Math.round(r.height));
+  bW = w;
+  bH = h;
   bCv.width = Math.round(bW * dpr);
   bCv.height = Math.round(bH * dpr);
   bCv.style.width = bW + 'px';
@@ -100,6 +105,7 @@ function bFit() {
    או אזור מסלע בגודל ציפורן. במשימות כאלה המסך מתקרב אל המשימה,
    והמפה סביבה נשארת גלויה כדי שאפשר יהיה להתמצא. */
 function bApplyProj() {
+  if (!bBase) return;   /* לפני המדידה הראשונה אין עדיין על מה להתבסס */
   bProj = (bTask && bTask.zoom && bTask.zoom.length)
     ? bZoomProj(bBase, bTask.zoom, .55) : bBase;
 }
@@ -685,16 +691,29 @@ function bInit() {
     SAVE.build = { stage: 0, outline: 0, seams: {}, rocks: {}, sites: {}, tier: 0 };
     persist(); bNextTask(); bPaintUI(); bDraw();
   };
+  /* הפריסה משתנה גם בלי שינוי גודל חלון: הכותרת מתארכת לשתי שורות,
+     בנק השבבים נכנס ויוצא בין שלבים, וסרגל הדפדפן נעלם בגלילה. בלי
+     מעקב אחרי המסגרת עצמה הקנבס נשאר בגודל של רגע אחר, ודרום הארץ
+     נשאר מחוץ לתצוגה. */
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => { if (currentScreen === 'build') bFit(); })
+      .observe($('#build-canvas-wrap'));
+  }
   window.addEventListener('resize', () => { if (currentScreen === 'build') bFit(); });
+  window.addEventListener('orientationchange', () => {
+    if (currentScreen === 'build') setTimeout(() => bFit(true), 120);
+  });
 }
 
 function openBuild() {
   bSave();
   show('build');
-  requestAnimationFrame(() => {
-    bFit();
-    bNextTask();
-    bPaintUI();
-    bDraw();
-  });
+  /* מודדים פעמיים בכוונה. הראשונה מבססת את ההיטל שהמשימה זקוקה לו,
+     והשנייה – אחרי שהכותרת ושורת הכלים כבר בפריסה – מתקנת את הגובה.
+     בלעדיה הקנבס נשאר בגודל של רגע שבו הכותרת עוד ריקה ושורת הכלים
+     מוסתרת, כלומר גבוה בכ-150 פיקסל מהמסגרת, ודרום הארץ נחתך. */
+  bFit(true);
+  bNextTask();
+  bPaintUI();
+  requestAnimationFrame(() => { bFit(true); bDraw(); });
 }
