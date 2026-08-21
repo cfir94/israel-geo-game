@@ -349,13 +349,15 @@
       <label class="switch"><span>צלילים</span><input type="checkbox" id="opt-sound" checked></label>
       <label class="switch"><span>רטט</span><input type="checkbox" id="opt-haptic" checked></label>
       <label class="switch"><span>שמות אזורים על המפה</span><input type="checkbox" id="opt-labels" checked></label>
-      <p class="set-label">מפת תבליט</p>
+      <p class="set-label">מפת שטח</p>
       <div class="seg" id="topo-seg">
         <button data-topo-opt="auto"><span>⛰️</span>לפי המצב</button>
         <button data-topo-opt="on"><span>👁️</span>תמיד</button>
         <button data-topo-opt="off"><span>🚫</span>כבויה</button>
       </div>
-      <p class="fineprint">"לפי המצב" מדליק את התבליט היכן שהשאלה היא על צורת השטח: קמרים וקערים, גבולות ותפרים, נחלים ומעיינות, דרכים עתיקות – וגם באטלס וב"מה בסביבתי". בכל מסך אחר אפשר להדליק ולכבות בכפתור ⛰️ שעל המפה.</p>
+      <label class="switch"><span>הצללת גבהים <small>צבע לפי גובה ותבליט</small></span><input type="checkbox" id="opt-relief" checked></label>
+      <label class="switch"><span>קווי גובה <small>כל 100 מ׳; בתצוגה מלאה רק כל 500</small></span><input type="checkbox" id="opt-contours" checked></label>
+      <p class="set-note">"לפי המצב" מדליק את מפת השטח בקמרים וקערים, בגבולות ותפרים, בנחלים ובדרכים העתיקות – וגם באטלס וב"מה בסביבתי". בכל מסך אחר יש כפתור ⛰️ על המפה.</p>
       <label class="switch"><span>שאלות הדרכה אחרי כל מיקום</span><input type="checkbox" id="opt-guideq" checked></label>
       <div class="shield-row">
         <div>
@@ -383,6 +385,7 @@
 <script src="js/structure.js"></script>
 <script src="js/history.js"></script>
 <script src="js/periods.js"></script>
+<script src="js/contours.js"></script>
 <script src="js/build.js"></script>
 <script src="js/social.js"></script>
 <script src="js/map.js"></script>

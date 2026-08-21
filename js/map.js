@@ -208,6 +208,11 @@ const GameMap = (() => {
       p.style.opacity = 0;
     });
 
+    /* קווי גובה – מעל האזורים כדי שיישארו חדים גם כשאזור מודגש,
+       ומתחת למים ולגבולות. הנתיבים עצמם נבנים רק כשמדליקים. */
+    layers.contours = el('g', { class: 'lyr-contours', 'clip-path': 'url(#clip-land)' }, root);
+    layers.contours.style.display = 'none';
+
     /* גוף מים */
     layers.water = el('g', { class: 'lyr-water' }, root);
     [GEO.kinneret, GEO.deadSeaN, GEO.deadSeaS].forEach(r =>
@@ -426,7 +431,11 @@ const GameMap = (() => {
   function apply() {
     svg.setAttribute('viewBox', `${box.x.toFixed(1)} ${box.y.toFixed(1)} ${box.w.toFixed(1)} ${box.h.toFixed(1)}`);
     const k = box.w / fullBox().w;
-    if (Math.abs(k - lastK) > 0.004) { lastK = k; rescaleMarkers(markerScale()); }
+    if (Math.abs(k - lastK) > 0.004) {
+      lastK = k;
+      rescaleMarkers(markerScale());
+      if (ctVisible) syncContourDensity();
+    }
   }
 
   /* שמירה על גודל אחיד של סיכות ותוויות בכל רמת זום */
@@ -592,6 +601,38 @@ const GameMap = (() => {
     refreshTheme();
   }
   const topoOn = () => topoVisible;
+
+  /* ------------------------------------------- קווי גובה ---- */
+  /* מאות נתיבים ואלפי נקודות – נבנים פעם אחת, בפעם הראשונה שמדליקים.
+     בתצוגה מלאה מוצגים רק קווי המדד (כל 500 מ׳); במרווח של 100 מ׳
+     הארץ כולה נראית כמו רשת דחוסה, והם נפתחים כשמתקרבים. */
+  /* 3.5 ולא 2.2: מצבי השטח נפתחים מעצמם בזום 2.1 בערך, וסף צמוד לזה
+     היה מהבהב בין דליל לצפוף על כל תזוזה קטנה. */
+  const CT_INDEX = 500, CT_DENSE_AT = 3.5;
+  let ctBuilt = false, ctVisible = false;
+
+  function buildContours() {
+    if (ctBuilt || typeof CONTOURS === 'undefined') return;
+    ctBuilt = true;
+    const minor = el('g', { class: 'ct-minor' }, layers.contours);
+    const index = el('g', { class: 'ct-index' }, layers.contours);
+    CONTOURS.forEach(([lv, pts]) => el('path', {
+      d: pathOf(pts, false), 'data-elev': lv, 'vector-effect': 'non-scaling-stroke'
+    }, lv % CT_INDEX === 0 ? index : minor));
+  }
+
+  function syncContourDensity() {
+    if (ctBuilt) svg.classList.toggle('ct-dense', zoomLevel() >= CT_DENSE_AT);
+  }
+
+  function showContours(on) {
+    if (!layers.contours) return;
+    ctVisible = !!on;
+    if (on) buildContours();
+    layers.contours.style.display = on && ctBuilt ? '' : 'none';
+    syncContourDensity();
+  }
+  const contoursOn = () => ctVisible;
 
   /* צבעי התקן צריכים להיקרא כפי שהם, ולכן השכבה אטומה כמעט לגמרי
      והיבשה שמתחתיה מוסתרת. שקיפות מערבבת את הגוונים ומעכירה אותם. */
@@ -784,7 +825,7 @@ const GameMap = (() => {
     clientToLatLon, latLonToClient, projX, projY,
     regionAt, onLand, pin, line, clearPins,
     showRegions, setRegionState, resetRegionStates, showRegionLabels,
-    showTopo, topoOn,
+    showTopo, topoOn, showContours, contoursOn,
     showGeology, setAreaState, resetAreaStates, areaAt, fitArea,
     probeArea, revealGeology, markArea,
     showPaths, hidePaths, setPathState, pathAt, pathMid, fitPaths,

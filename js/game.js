@@ -39,7 +39,7 @@ const KEY = 'israel-geo-game-v1';
 const DEFAULT_CLASS = 'קמ"ד שרון 26-27';
 const DEFAULT_SAVE = {
   coins: 120, xp: 0, stars: {}, best: {},
-  sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto', topo: 'auto',
+  sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto', topo: 'auto', relief: 1, contours: 1,
   daily: {}, seen: {}, misses: [], welcomed: 0,
   streak: 0, bestStreak: 0, shields: 0, lastActive: '', log: {},
   build: null
@@ -213,12 +213,19 @@ function topoWanted() {
   return !!(G && G.mode && TOPO_MODES.has(G.mode));
 }
 
+/* שתי שכבות עצמאיות על אותו מתג: ה-seg קובע *מתי* מפת השטח מופיעה,
+   ושני המתגים קובעים *מה* מופיע – הצללה, קווי גובה, או שניהם. */
 function applyTopo() {
   if (typeof GameMap === 'undefined' || !GameMap.showTopo) return;
   const on = topoWanted();
-  GameMap.showTopo(on);
+  GameMap.showTopo(on && !!SAVE.relief);
+  GameMap.showContours(on && !!SAVE.contours);
   const b = $('#topo-toggle');
-  if (b) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  if (b) {
+    const lit = on && (!!SAVE.relief || !!SAVE.contours);
+    b.classList.toggle('on', lit);
+    b.setAttribute('aria-pressed', lit ? 'true' : 'false');
+  }
   $$('#topo-seg button').forEach(x =>
     x.classList.toggle('on', x.dataset.topoOpt === (SAVE.topo || 'auto')));
 }
@@ -227,10 +234,14 @@ function applyTopo() {
    לחיצות מחזירות למצב שממנו התחלנו ולא לאוטומטי, וזה בכוונה –
    מי שנגע בכפתור מצפה שהבחירה תישאר. */
 function toggleTopo() {
+  if (!SAVE.relief && !SAVE.contours) {
+    toast('שתי שכבות מפת השטח כבויות בהגדרות');
+    return;
+  }
   SAVE.topo = topoWanted() ? 'off' : 'on';
   persist();
   applyTopo();
-  toast(SAVE.topo === 'on' ? '⛰️ מפת התבליט דולקת' : 'מפת התבליט כבויה');
+  toast(SAVE.topo === 'on' ? '⛰️ מפת השטח דולקת' : 'מפת השטח כבויה');
 }
 
 /* --------------------------------------------- אודיו ---- */
@@ -2732,6 +2743,8 @@ function bind() {
   $$('#topo-seg button').forEach(b => b.onclick = () => {
     SAVE.topo = b.dataset.topoOpt; persist(); applyTopo(); SFX.tap();
   });
+  $('#opt-relief').onchange = e => { SAVE.relief = e.target.checked ? 1 : 0; persist(); applyTopo(); };
+  $('#opt-contours').onchange = e => { SAVE.contours = e.target.checked ? 1 : 0; persist(); applyTopo(); };
 
   $('#opt-labels').onchange = e => { SAVE.labels = e.target.checked ? 1 : 0; persist(); };
   $('#opt-guideq').onchange = e => {
@@ -2788,6 +2801,8 @@ function boot() {
   $('#opt-haptic').checked = !!SAVE.haptic;
   $('#opt-labels').checked = !!SAVE.labels;
   $('#opt-guideq').checked = !!SAVE.guideQ;
+  $('#opt-relief').checked = !!SAVE.relief;
+  $('#opt-contours').checked = !!SAVE.contours;
   bind();
   applyTopo();
   renderHUD();

@@ -43,6 +43,7 @@
   --water-2:   #2b86b8;
   --neighbour: #e5e9ee;
   --neighbour-line: #d3dae1;
+  --contour:   #6b5136;
   --border-main:  #0f766e;
   --border-dash:  #7d8d9b;
   --label-fill:   rgba(12,32,46,.95);
@@ -99,6 +100,7 @@
     --water-2:   #136a96;
     --neighbour: #122431;
     --neighbour-line: #0d1b26;
+    --contour:   #cbb18a;
     --border-main:  #8ff2dd;
     --border-dash:  #a8bccd;
     --label-fill:   rgba(255,255,255,.85);
@@ -147,6 +149,7 @@
   --water-2:   #136a96;
   --neighbour: #122431;
   --neighbour-line: #0d1b26;
+  --contour:   #cbb18a;
   --border-main:  #8ff2dd;
   --border-dash:  #a8bccd;
   --label-fill:   rgba(255,255,255,.85);
@@ -663,6 +666,11 @@ p { margin: 0; }
 .switch input::after { content: ''; position: absolute; top: 3px; inset-inline-start: 3px; width: 21px; height: 21px; border-radius: 50%; background: #fff; transition: transform .22s; }
 .switch input:checked { background: var(--teal-2); }
 .switch input:checked::after { transform: translateX(-19px); }
+/* מתג עם שורת הסבר – השורה השנייה קטנה, עמומה ולא מודגשת */
+.switch small { display: block; font-size: 11.5px; font-weight: 500; color: var(--txt-dim); margin-top: 2px; }
+.switch > span { min-width: 0; padding-inline-end: 12px; }
+/* הערת סעיף – בניגוד ל-fineprint שהיא כותרת תחתונה של הגיליון */
+.set-note { font-size: 11.5px; line-height: 1.65; color: var(--txt-dim); margin: 10px 2px 4px; text-align: start; }
 .fineprint { font-size: 11px; color: rgba(147,167,184,.6); text-align: center; margin-top: 14px; }
 #settings .sheet-card h3 { margin-bottom: 8px; }
 
@@ -907,6 +915,20 @@ p { margin: 0; }
   :root:not([data-theme="light"]) .lyr-topo { filter: brightness(.66) saturate(.8); }
 }
 :root[data-theme="dark"] .lyr-topo { filter: brightness(.66) saturate(.8); }
+
+/* ---------- קווי גובה ---------- */
+/* הקווים חייבים להישאר בעובי אחיד בכל רמת זום, ולכן vector-effect
+   ולא stroke-width שמשתנה עם ה-viewBox. קווי המדד – כל 500 מ׳ –
+   כהים ועבים יותר, ובתצוגה מלאה הם היחידים שמוצגים: 100 מ׳ על כל
+   הארץ בבת אחת נראים כמו רשת ולא כמו תבליט. */
+.lyr-contours { pointer-events: none; fill: none; }
+.lyr-contours path { fill: none; stroke: var(--contour); }
+.ct-minor path { stroke-width: .75; opacity: .45; }
+.ct-index path { stroke-width: 1.5; opacity: .85; }
+/* מעל ההצללה הרקע כבר צבעוני, וקו באותה עוצמה נבלע בו */
+.gamemap.topo-on .ct-minor path { opacity: .5; }
+.gamemap.topo-on .ct-index path { stroke-width: 1.7; opacity: .95; }
+.gamemap:not(.ct-dense) .ct-minor { display: none; }
 
 /* ---------- שכבה גיאולוגית ---------- */
 .geo-area { transition: opacity .3s, filter .3s; }
