@@ -38,8 +38,8 @@ const die = m => { console.log('FAIL: ' + m); process.exitCode = 1; };
 
   /* --- שלב 1: מתאר. שרבוט קטן צריך להיכשל, מעקב מדויק צריך לעבור --- */
   const scribble = await pg.evaluate(() => {
-    bStroke = [];
-    for (let i = 0; i < 40; i++) bStroke.push([bW / 2 + Math.cos(i) * 12, bH / 2 + Math.sin(i) * 12]);
+    bStrokes = [[]];
+    for (let i = 0; i < 40; i++) bStrokes[0].push([bW / 2 + Math.cos(i) * 12, bH / 2 + Math.sin(i) * 12]);
     bCheck();
     return { iou: SAVE.build.outline, stage: SAVE.build.stage };
   });
@@ -48,7 +48,7 @@ const die = m => { console.log('FAIL: ' + m); process.exitCode = 1; };
 
   /* מעקב אחרי הקו הירוק בלבד – בלי יהודה ושומרון – צריך להיכשל */
   const greenLine = await pg.evaluate(() => {
-    bStroke = GEO.israel.map(([lo, la]) => [bProj.x(lo), bProj.y(la)]);
+    bStrokes = [GEO.israel.map(([lo, la]) => [bProj.x(lo), bProj.y(la)])];
     bCheck();
     return { iou: SAVE.build.outline, stage: SAVE.build.stage };
   });
@@ -59,7 +59,7 @@ const die = m => { console.log('FAIL: ' + m); process.exitCode = 1; };
   const traced = await pg.evaluate(() => {
     const ring = GEO.israel.map(([lo, la]) => [bProj.x(lo), bProj.y(la)]);
     const wb = GEO.westbank.map(([lo, la]) => [bProj.x(lo), bProj.y(la)]);
-    bStroke = ring.concat(wb);
+    bStrokes = [ring.concat(wb)];
     bCheck();
     return { iou: SAVE.build.outline, stage: SAVE.build.stage };
   });
@@ -76,8 +76,8 @@ const die = m => { console.log('FAIL: ' + m); process.exitCode = 1; };
     const r = await pg.evaluate(() => {
       if (!bTask || bTask.kind !== 'draw') return null;
       const id = bTask.id;
-      bStroke = bDensify(bTask.ring.map(([lo, la]) => [bProj.x(lo), bProj.y(la)]), 4);
-      const err = bLineErr(bStroke, bTask.ring);
+      bStrokes = [bDensify(bTask.ring.map(([lo, la]) => [bProj.x(lo), bProj.y(la)]), 4)];
+      const err = bLineErr(bStrokes[0], bTask.ring);
       bCheck();
       return { id, err: +err.toFixed(4), ok: !!SAVE.build.seams[id] };
     });

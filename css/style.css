@@ -489,6 +489,8 @@ p { margin: 0; }
 
 .btools { display: flex; gap: 10px; flex: 0 0 auto; }
 .btools .ghost-btn { flex: 0 0 auto; }
+/* ביטול קטע – כפתור סמל בלבד, ריבועי כדי שלא ייראה כמו טקסט קטוע */
+#build-undo { width: 44px; padding-inline: 0; font-size: 19px; line-height: 1; }
 .btools .pill-btn { flex: 1; }
 
 /* ------------------------------------------ ציר הזמן ---- */

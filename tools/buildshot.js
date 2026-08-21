@@ -32,7 +32,7 @@ const die = m => { console.log('FAIL: ' + m); process.exitCode = 1; };
   for (const p of pts) await pg.mouse.move(p[0], p[1]);
   await pg.mouse.up();
   await pg.waitForTimeout(150);
-  const drawn = await pg.evaluate(() => bStroke && bStroke.length);
+  const drawn = await pg.evaluate(() => bStrokes.length && bStrokes[0].length);
   console.log('נקודות שנקלטו מהעכבר:', drawn, '/', pts.length);
   if (!drawn || drawn < pts.length * .5) die('אירועי המצביע לא נקלטו על הקנבס');
 

@@ -52,9 +52,9 @@ const bOutlineRings = () => [GEO.israel, GEO.westbank, GEO.golan];
 
 const BUILD_STAGES = [
   { id: 'outline', icon: '✏️', name: 'מתאר הארץ',
-    tip: 'שרטטו באצבע את קו המתאר של ישראל – מהחרמון ועד אילת, וחזרה לאורך החוף.' },
+    tip: 'שרטטו באצבע את קו המתאר של ישראל – מהחרמון ועד אילת, וחזרה לאורך החוף. אפשר להרים את האצבע ולהמשיך.' },
   { id: 'seams', icon: '📐', name: 'גבולות פנימיים',
-    tip: 'שרטטו את הקו שמפריד בין שני חבלי הארץ.' },
+    tip: 'שרטטו את הקו שמפריד בין שני חבלי הארץ. אפשר להרים את האצבע ולהמשיך.' },
   { id: 'rocks', icon: '🪨', name: 'מסלע',
     tip: 'גררו כל סוג סלע אל האזור שבו הוא חשוף.' },
   { id: 'sites', icon: '📍', name: 'אתרים',
@@ -71,7 +71,9 @@ const bStageDone = i => bSave().stage > i;
 
 /* --------------------------------------------- הקנבס ---- */
 let bCv = null, bCtx = null, bProj = null, bBase = null, bW = 0, bH = 0;
-let bStroke = null;      /* השרטוט הנוכחי, בקואורדינטות קנבס */
+let bStrokes = [];       /* השרטוט הנוכחי: מערך של קטעים, בקואורדינטות קנבס.
+                            מרימים את האצבע – נפתח קטע חדש, והבדיקה
+                            משרשרת את כולם לקו אחד. */
 let bTask = null;        /* המשימה הנוכחית בתוך השלב */
 let bDrag = null;        /* גרירה פעילה של שבב */
 let bFlash = null;       /* אנימציית משוב קצרה */
@@ -230,13 +232,28 @@ function bDraw() {
   /* המטרה הנוכחית של השלב */
   if (bTask) bDrawTask(stage, col);
 
-  /* השרטוט של המשתמש */
-  if (bStroke && bStroke.length > 1) {
+  /* השרטוט של המשתמש – כל הקטעים שצוירו עד כה */
+  if (bStrokes.length) {
     bCtx.strokeStyle = '#ffce4d'; bCtx.lineWidth = 3;
     bCtx.lineJoin = bCtx.lineCap = 'round';
-    bCtx.beginPath();
-    bStroke.forEach((p, i) => i ? bCtx.lineTo(p[0], p[1]) : bCtx.moveTo(p[0], p[1]));
-    bCtx.stroke();
+    bStrokes.forEach(seg => {
+      if (seg.length < 2) return;
+      bCtx.beginPath();
+      seg.forEach((p, i) => i ? bCtx.lineTo(p[0], p[1]) : bCtx.moveTo(p[0], p[1]));
+      bCtx.stroke();
+    });
+    /* החיבורים שבין קטע לקטע, בקו מקווקו דק: כך רואים מראש איך
+       הבדיקה עומדת לסגור את הפערים. */
+    const chain = bChain(bStrokes);
+    if (bStrokes.filter(x => x.length > 1).length > 1) {
+      bCtx.save();
+      bCtx.strokeStyle = 'rgba(255,206,77,.5)'; bCtx.lineWidth = 1.6;
+      bCtx.setLineDash([4, 4]);
+      bCtx.beginPath();
+      chain.forEach((p, i) => i ? bCtx.lineTo(p[0], p[1]) : bCtx.moveTo(p[0], p[1]));
+      bCtx.stroke();
+      bCtx.restore();
+    }
   }
 
   /* משוב אחרי בדיקה: הקו/הצורה הנכונה מוצגת מעל */
@@ -356,13 +373,14 @@ function bLineErr(userPts, ring) {
 /* ------------------------------------------- משימות ---- */
 function bNextTask() {
   const st = bSave();
-  bStroke = null; bFlash = null; bTask = null;
+  bStrokes = []; bFlash = null; bTask = null;
   const stage = BUILD_STAGES[st.stage];
   if (!stage) return;
 
   if (stage.id === 'outline') {
     bTask = { kind: 'draw', rings: bOutlineRings(), close: true,
-      text: 'שרטטו את קו המתאר של ישראל', sub: 'מהחרמון בצפון ועד אילת בדרום, וחזרה לאורך חוף הים' };
+      text: 'שרטטו את קו המתאר של ישראל',
+      sub: 'מהחרמון ועד אילת וחזרה לאורך החוף · אפשר להרים את האצבע ולהמשיך' };
   } else if (stage.id === 'seams') {
     const left = bSeamList().filter(id => !st.seams[id]);
     if (!left.length) return bStageComplete();
@@ -406,24 +424,54 @@ function bStageComplete() {
 }
 
 /* ------------------------------------------- בדיקה ---- */
+/* משרשרים את הקטעים לקו אחד: מתחילים מהקטע הראשון שצויר, ובכל צעד
+   מצרפים את הקטע שאחד מקצותיו הקרוב ביותר לסוף השרשרת – ואם דווקא
+   הקצה השני שלו קרוב יותר, מצרפים אותו הפוך. כך לא משנה באיזה סדר
+   צוירו הקטעים ולא לאיזה כיוון: מי שמשרטט את החוף מצפון לדרום ואז
+   את הגבול המזרחי מדרום לצפון מקבל בדיוק את מה שהתכוון אליו. */
+function bChain(strokes) {
+  const src = strokes.filter(x => x.length > 1).map(x => x.slice());
+  if (!src.length) return [];
+  const out = src.shift();
+  while (src.length) {
+    const end = out[out.length - 1];
+    let bi = 0, rev = false, bd = Infinity;
+    src.forEach((seg, i) => {
+      const a = seg[0], b = seg[seg.length - 1];
+      const da = Math.hypot(a[0] - end[0], a[1] - end[1]);
+      const db = Math.hypot(b[0] - end[0], b[1] - end[1]);
+      if (da < bd) { bd = da; bi = i; rev = false; }
+      if (db < bd) { bd = db; bi = i; rev = true; }
+    });
+    const seg = src.splice(bi, 1)[0];
+    if (rev) seg.reverse();
+    for (const p of seg) out.push(p);
+  }
+  return out;
+}
+
 function bStrokeLen() {
   let d = 0;
-  for (let i = 1; i < bStroke.length; i++)
-    d += Math.hypot(bStroke[i][0] - bStroke[i - 1][0], bStroke[i][1] - bStroke[i - 1][1]);
+  bStrokes.forEach(seg => {
+    for (let i = 1; i < seg.length; i++)
+      d += Math.hypot(seg[i][0] - seg[i - 1][0], seg[i][1] - seg[i - 1][1]);
+  });
   return d;
 }
+const bStrokePts = () => bStrokes.reduce((n, seg) => n + seg.length, 0);
 
 function bCheck() {
   if (!bTask || bTask.kind !== 'draw') return;
   /* לא סופרים נקודות אלא אורך: תפר קצר מצויר בשבע נקודות ועדיין
      תקף, ואילו נגיעה במקום אחד מייצרת עשרות נקודות בלי שום קו. */
-  if (!bStroke || bStroke.length < 3 || bStrokeLen() < 24) {
+  if (bStrokePts() < 3 || bStrokeLen() < 24) {
     SFX.bad(); toast('קודם שרטטו קו על המפה'); return;
   }
   const st = bSave();
+  const drawn = bChain(bStrokes);
 
   if (BUILD_STAGES[st.stage].id === 'outline') {
-    const iou = bIoU(bStroke, bOutlineRings());
+    const iou = bIoU(drawn, bOutlineRings());
     const pct = Math.round(iou * 100);
     st.outline = Math.max(st.outline || 0, pct);
     const ok = iou >= B_PASS.outline;
@@ -436,7 +484,7 @@ function bCheck() {
   }
 
   /* תפר */
-  const err = bLineErr(bStroke, bTask.ring);
+  const err = bLineErr(drawn, bTask.ring);
   const ok = err <= B_PASS.seam;
   bFlash = { ring: bTask.ring, close: false, ok };
   bDraw();
@@ -556,22 +604,35 @@ function bInit() {
   if (!bCv) return;
 
   /* שרטוט על הקנבס */
+  /* כל הנחה של האצבע פותחת קטע חדש ולא מוחקת את מה שכבר צויר.
+     drawing מסמן שהאצבע על המסך עכשיו, כדי שאירוע תזוזה בלי הנחה
+     (עכבר שעובר מעל הקנבס) לא יוסיף נקודות. */
+  let drawing = false;
   bCv.addEventListener('pointerdown', e => {
     if (!bTask || bTask.kind !== 'draw') return;
     bCv.setPointerCapture(e.pointerId);
     bFlash = null;
-    bStroke = [[e.offsetX, e.offsetY]];
+    drawing = true;
+    bStrokes.push([[e.offsetX, e.offsetY]]);
     bDraw();
   });
   bCv.addEventListener('pointermove', e => {
-    if (!bStroke || !bTask || bTask.kind !== 'draw') return;
+    if (!drawing || !bTask || bTask.kind !== 'draw') return;
     e.preventDefault();
-    const last = bStroke[bStroke.length - 1];
+    const seg = bStrokes[bStrokes.length - 1];
+    const last = seg[seg.length - 1];
     if (Math.hypot(e.offsetX - last[0], e.offsetY - last[1]) < 2.5) return;
-    bStroke.push([e.offsetX, e.offsetY]);
+    seg.push([e.offsetX, e.offsetY]);
     bDraw();
   });
-  const endStroke = () => { if (bStroke) { bPaintUI(); bDraw(); } };
+  const endStroke = () => {
+    if (!drawing) return;
+    drawing = false;
+    /* נגיעה בלי תזוזה לא מייצרת קטע */
+    const seg = bStrokes[bStrokes.length - 1];
+    if (seg && seg.length < 2) bStrokes.pop();
+    bPaintUI(); bDraw();
+  };
   bCv.addEventListener('pointerup', endStroke);
   bCv.addEventListener('pointercancel', endStroke);
 
@@ -612,7 +673,12 @@ function bInit() {
   screen.addEventListener('pointerup', endDrag);
   screen.addEventListener('pointercancel', endDrag);
 
-  $('#build-clear').onclick = () => { SFX.tap(); bStroke = null; bFlash = null; bDraw(); };
+  $('#build-undo').onclick = () => {
+    SFX.tap();
+    if (!bStrokes.length) { toast('אין מה לבטל'); return; }
+    bStrokes.pop(); bFlash = null; bPaintUI(); bDraw();
+  };
+  $('#build-clear').onclick = () => { SFX.tap(); bStrokes = []; bFlash = null; bPaintUI(); bDraw(); };
   $('#build-check').onclick = () => { SFX.tap(); bCheck(); };
   $('#build-reset').onclick = () => {
     if (!confirm('לאפס את כל התקדמות הבנייה ולהתחיל מחדש?')) return;
