@@ -210,6 +210,11 @@ function topoWanted() {
      בלי הקיצור הזה התבליט היה נדלק ונכבה כל שאלה שלישית. ממילא זה
      המצב שבו הוא הכי שימושי: עומדים בשטח ומסתכלים על מה שמסביב. */
   if (G && G.nearby) return true;
+  /* בשלבים המתקדמים של "אזורי הארץ" אין צבעי חבלים על המפה, ולכן
+     הסיבה שהוציאה את המצב הזה מהרשימה כבר לא קיימת – ודווקא שם
+     התבליט הוא חלק מהתשובה: השאלות מדברות על גב הר, בקעה ומישור. */
+  const q = G && G.qs && G.qs[G.idx];
+  if (q && q.mapMode === 'regionsOutline') return true;
   return !!(G && G.mode && TOPO_MODES.has(G.mode));
 }
 
@@ -343,6 +348,68 @@ function sitesPerLevel(mode) {
   return GAME_CONFIG.questionsPerLevel;
 }
 
+/* ------------------------------------------- אזורי הארץ ---- */
+/* שלוש משפחות שאלות, כולן באותה משימה – ללחוץ על החבל הנכון – אבל
+   הדרך אליה מתארכת: קודם השם, אחר כך תיאור בלי שם, ולבסוף יחסים
+   במרחב. משלב 'clue' ואילך גם המפה נעשית קשה יותר: צבעי החבלים
+   כבים, ונשאר רק קו המתאר. */
+const REGION_LEVELS = [
+  { kind: 'name' }, { kind: 'name' },
+  { kind: 'clue' }, { kind: 'clue' }, { kind: 'clue' },
+  { kind: 'rel' }, { kind: 'rel' }, { kind: 'rel' }
+];
+
+/* רמז שמצמצם את החיפוש בלי למסור את התשובה: איפה בערך על המפה,
+   ולא איזה חבל. שם החבל היה הופך את הרמז לפתרון. */
+function regionWhereHint(id) {
+  const rg = REGION_BY_ID[id];
+  const lat = rg.poly.reduce((s, p) => s + p[1], 0) / rg.poly.length;
+  const lon = rg.poly.reduce((s, p) => s + p[0], 0) / rg.poly.length;
+  const ns = lat > 32.6 ? 'בצפון הארץ' : lat > 31.4 ? 'במרכז הארץ' : 'בדרום הארץ';
+  const ew = lon < 34.95 ? 'קרוב לחוף' : lon > 35.3 ? 'בצד המזרחי' : 'בין ההר לחוף';
+  return 'החבל נמצא ' + ns + ', ' + ew + '.';
+}
+
+function regionFindLevel(level, n, rnd) {
+  const plan = REGION_LEVELS[Math.min(level, REGION_LEVELS.length) - 1] || REGION_LEVELS[0];
+
+  if (plan.kind === 'name') {
+    return shuffle(REGIONS, rnd).slice(0, n).map(rg => ({
+      kind: 'mapRegion', showMap: true, mapMode: 'regionsBlank', time: 20,
+      kicker: 'איפה האזור הזה?',
+      text: rg.name,
+      sub: 'לחצו על האזור במפה',
+      targetRegion: rg.id,
+      hint: { text: rg.desc },
+      explain: rg.name + ' – ' + rg.desc
+    }));
+  }
+
+  /* השלבים המתקדמים מחלקים ביניהם את המאגר לפי מספר השלבים מאותו
+     סוג, ב-evenSlice – אחרת שאלות בקצה המאגר נשארות יתומות. */
+  const tier = plan.kind === 'clue' ? 2 : 3;
+  const pool = REGION_Q_BY_TIER(tier);
+  const sameKind = REGION_LEVELS.filter(x => x.kind === plan.kind).length;
+  const idx = REGION_LEVELS.slice(0, level).filter(x => x.kind === plan.kind).length;
+  const per = Math.max(1, Math.ceil(pool.length / sameKind));
+  let list = shuffle(pool, mulberry32(hashStr('regionQ#' + tier)))
+    .slice((idx - 1) * per, idx * per);
+  if (list.length < n) {
+    /* מאגר קטן מהשלב – משלימים מהשאר בלי לחזור על מה שכבר נבחר */
+    const rest = pool.filter(q => !list.includes(q));
+    list = list.concat(shuffle(rest, rnd).slice(0, n - list.length));
+  }
+  return shuffle(list, rnd).slice(0, n).map(q => ({
+    kind: 'mapRegion', showMap: true, mapMode: 'regionsOutline', time: tier === 3 ? 26 : 30,
+    kicker: tier === 3 ? '🧭 יחסים במרחב' : '🔎 זהו את החבל',
+    text: q.q,
+    sub: 'לחצו על החבל הנכון במפה',
+    targetRegion: q.r,
+    hint: { text: regionWhereHint(q.r) },
+    explain: q.x
+  }));
+}
+
 function levelCount(mode, diff = 1) {
   if (mode === 'rockAt') return Math.max(1, Math.ceil(targetsFor(diff).length / sitesPerLevel(mode)));
   /* evenLevels/evenSlice ולא slice רגיל – אחרת שאלות בקצה כל רמת
@@ -353,7 +420,10 @@ function levelCount(mode, diff = 1) {
     return Math.max(1, Math.min(12, Math.floor(poolFor(diff).length / sitesPerLevel(mode))));
   }
   switch (mode) {
-    case 'regionFind': return 8;
+    /* היה 8 שלבים קבועים של אותה שאלה בדיוק מתוך 13 אזורים – חזרה
+       ולא התקדמות. עכשיו המספר נגזר מהתוכן: שני שלבי שמות, ואחריהם
+       שלבי תיאור ושלבי יחסים במרחב. */
+    case 'regionFind': return REGION_LEVELS.length;
     case 'trivia': return evenLevels(TRIVIA.length, GAME_CONFIG.questionsPerLevel);
     case 'unesco': return 5;
     case 'rockAt': return Math.ceil(GEO_AREAS.length / GAME_CONFIG.questionsPerLevel);
@@ -508,7 +578,12 @@ function foldRockQ(it, all, rnd) {
 
 /* ---------- גבולות ותפרים ---------- */
 /* "ל" לפני שם מיודע בולעת את ה"א הידיעה: "הגליל" → "לגליל" */
-const leh = s => s[0] === 'ה' ? 'ל' + s.slice(1) : 'ל' + s;
+/* ל' + ה"א הידיעה מתמזגות: "הגליל" → "לגליל". אבל ב"הר", "הרי"
+   ו"הרים" ה' היא חלק מהמילה, ולכן "הר אמיר" → "להר אמיר".
+   הבדיקה היא רווח או סוף מחרוזת ולא \b: ב-JavaScript גבול מילה
+   מוגדר על [A-Za-z0-9_] בלבד, ואות עברית אינה תו מילה. */
+const B_NOUN_HE = /^(הרים|הרי|הר)(?=\s|$)/;
+const leh = s => 'ל' + (s[0] === 'ה' && !B_NOUN_HE.test(s) ? s.slice(1) : s);
 const between = it => 'בין ' + it.a + ' ' + leh(it.b);
 
 function boundLocateQ(it, all) {
@@ -745,18 +820,7 @@ function buildQuestions(mode, level, diff = 1) {
     });
   }
 
-  if (mode === 'regionFind') {
-    const order = shuffle(REGIONS, rnd).slice(0, n);
-    return order.map(rg => ({
-      kind: 'mapRegion', showMap: true, mapMode: 'regionsBlank', time: 20,
-      kicker: 'איפה האזור הזה?',
-      text: rg.name,
-      sub: 'לחצו על האזור במפה',
-      targetRegion: rg.id,
-      hint: { text: rg.desc },
-      explain: rg.name + ' – ' + rg.desc
-    }));
-  }
+  if (mode === 'regionFind') return regionFindLevel(level, n, rnd);
 
   if (mode === 'trivia') {
     return evenSlice(TRIVIA, level, n).map(t => ({
@@ -1289,6 +1353,13 @@ function renderQuestion() {
       GameMap.resetAreaStates();
       GameMap.fitAll(false);
       GameMap.setTap(ll => onMapTapArea(ll));
+    } else if (q.mapMode === 'regionsOutline') {
+      /* בשלבים המתקדמים אין רמז צבעוני: רק מתאר הארץ, וצריך לדעת
+         איפה עובר הגבול ולא רק לזהות כתם צבע. */
+      GameMap.showRegions(false);
+      GameMap.showRegionLabels(false);
+      GameMap.fitAll(false);
+      GameMap.setTap(ll => onMapTapRegion(ll));
     } else if (q.mapMode === 'regions' || q.mapMode === 'regionsBlank') {
       GameMap.showRegions(true, .5);
       GameMap.showRegionLabels(false);

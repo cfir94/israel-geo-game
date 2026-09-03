@@ -413,7 +413,10 @@ function bNextTask() {
   bDraw();
 }
 
-const bBetween = b => 'בין ' + b.a + ' ' + (b.b[0] === 'ה' ? 'ל' + b.b.slice(1) : 'ל' + b.b);
+/* אותו כלל כמו ב-game.js (שם גם ההסבר המלא): ה"א הידיעה נבלעת
+   ב-ל', אבל "הר" ו"הרי" הן מילים בפני עצמן. */
+const bLeh = s => 'ל' + (s[0] === 'ה' && !B_NOUN_HE.test(s) ? s.slice(1) : s);
+const bBetween = b => 'בין ' + b.a + ' ' + bLeh(b.b);
 function bSitePool() {
   const st = bSave();
   return SITES.filter(s => s.lvl === BUILD_TIERS[Math.min(st.tier, BUILD_TIERS.length - 1)]);
