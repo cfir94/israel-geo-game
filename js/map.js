@@ -690,7 +690,18 @@ const GameMap = (() => {
   }
 
   function areaAt(lon, lat) {
-    for (const a of GEO_AREAS) if (pointInPoly(lon, lat, a.poly)) return a.id;
+    /* יחידות קטנות בתוך יחידה רחבה (רצפות המכתשים וחשיפות אבן
+       החול בדרום) מקבלות את שטח המגע המורחב שלהן כיעד לחיצה.
+       כך לחיצה סבירה ליד קו המגע אינה נבלעת ביחידת הרקע. */
+    for (const a of GEO_AREAS) {
+      if (a.hitPriority && pointInPoly(lon, lat, a.poly)) return a.id;
+    }
+    for (const a of GEO_AREAS) {
+      if (a.hitPriority && a._poly && pointInPoly(lon, lat, a._poly)) return a.id;
+    }
+    for (const a of GEO_AREAS) {
+      if (!a.hitPriority && pointInPoly(lon, lat, a.poly)) return a.id;
+    }
     for (const a of GEO_AREAS) if (a._poly && pointInPoly(lon, lat, a._poly)) return a.id;
     return null;
   }

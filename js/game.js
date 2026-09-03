@@ -479,6 +479,23 @@ function guideQuestion(site, row, rnd) {
 }
 function guideRowsFor(site) { return GUIDE_Q[site.id] || []; }
 
+/* שומר את שלוש שאלות ההדרכה כיחידה על אותו אתר, אבל לא מציב מיד
+   אחרי הסבר שאלה שהתשובה שלה כבר כתובה בו. זה חשוב במיוחד אחרי
+   שאלת מיקום: עובדת האתר מוצגת במשוב לפני ששאלות ההדרכה מוזרקות. */
+function orderedGuideRows(site, prior = '') {
+  const left = guideRowsFor(site).slice();
+  const out = [];
+  let shown = String(prior || '');
+  while (left.length) {
+    let i = left.findIndex(row => !shown.includes(String(row[2] || '')));
+    if (i < 0) i = 0;
+    const row = left.splice(i, 1)[0];
+    out.push(row);
+    shown = String(row[6] || row[2] || '');
+  }
+  return out;
+}
+
 /* ---------- דרכים עתיקות, נהרות ונחלים ---------- */
 function pathCenter(it) {
   const n = it.path.length;
@@ -629,7 +646,8 @@ function structFactQ(row, rnd) {
   };
 }
 
-/* סדר קבוע: לומדים תוואי על המפה, ומיד נשאלים עליו */
+/* כל הנוסחים נשמרים לפי התוואי שלהם. pathSequence מערבב אחר כך
+   בין התוואים, תוך שמירת הסדר הפנימי: קודם איתור ורק אחריו ידע. */
 let _pathPools = {};
 function pathPool(mode) {
   if (_pathPools[mode]) return _pathPools[mode];
@@ -662,6 +680,16 @@ function pathPool(mode) {
   });
   return (_pathPools[mode] = out);
 }
+
+/* בונים פעם אחת רצף מלא לכל מצב תוואי. כך אפשר לפזר שאלות על אותו
+   נחל/דרך/מבנה גם מעבר לגבולות של שלב, בלי לאבד שאלות בקצוות. */
+let _pathSequences = {};
+function pathSequence(mode) {
+  if (_pathSequences[mode]) return _pathSequences[mode];
+  const rnd = mulberry32(hashStr('path-build#' + mode));
+  const qs = pathPool(mode).map(f => f(rnd)).filter(Boolean);
+  return (_pathSequences[mode] = sequenceTopicQueues(qs, 'path-order#' + mode, 2));
+}
 /* ---------- חלוקה אחידה לשלבים ----------
    slice רגיל משאיר שאלות מיותמות בסוף המאגר או שלב אחרון קטוע.
    כאן מחלקים את המאגר לשלבים שווים בגודלם, בלי לאבד אף שאלה. */
@@ -671,8 +699,8 @@ function evenSlice(arr, level, per) {
   const l = Math.min(Math.max(1, level), lv);
   return arr.slice(Math.floor((l - 1) * arr.length / lv), Math.floor(l * arr.length / lv));
 }
-function pathLevels(mode) { return evenLevels(pathPool(mode).length, sitesPerLevel(mode)); }
-function pathSlice(mode, level) { return evenSlice(pathPool(mode), level, sitesPerLevel(mode)); }
+function pathLevels(mode) { return evenLevels(pathSequence(mode).length, sitesPerLevel(mode)); }
+function pathSlice(mode, level) { return evenSlice(pathSequence(mode), level, sitesPerLevel(mode)); }
 
 function distractorSites(site, count, rnd) {
   const same = SITES.filter(s => s.r === site.r && s.id !== site.id);
@@ -766,14 +794,14 @@ function locErrorMsg(e) {
 }
 
 /* ---------- בניית שאלות ---------- */
-function buildQuestions(mode, level, diff = 1) {
+function buildQuestionsRaw(mode, level, diff = 1) {
   const rnd = mulberry32(hashStr(mode + '#' + diff + '#' + level));
   const n = GAME_CONFIG.questionsPerLevel;
 
   if (mode === 'guide') {
     const out = [];
     sitesForLevel(level, diff, mode).forEach(s =>
-      guideRowsFor(s).forEach(row => out.push(guideQuestion(s, row, rnd))));
+      orderedGuideRows(s).forEach(row => out.push(guideQuestion(s, row, rnd))));
     return out;
   }
 
@@ -954,7 +982,7 @@ function buildQuestions(mode, level, diff = 1) {
   }
 
   if (mode === 'routes' || mode === 'streams' || mode === 'folds' || mode === 'bounds') {
-    return pathSlice(mode, level).map(f => f(rnd));
+    return pathSlice(mode, level);
   }
 
   if (mode === 'unesco') {
@@ -991,6 +1019,144 @@ function buildQuestions(mode, level, diff = 1) {
     return out;
   }
   return [];
+}
+
+/* ---------- סדר שאלות בלי רמז מהמסך הקודם ----------
+   אותו נושא מקבל מרווח של שתי שאלות כשאפשר: תוואי, אתר, חבל ארץ
+   או יחידת סלע. בנוסף נמנעת הצבה של שאלה אם התשובה שלה מופיעה
+   במפורש במשוב של השאלה הקודמת. הערבוב יציב לפי מצב ושלב. */
+function questionKeys(q) {
+  const keys = [];
+  const path = q.targetPath || q.revealPath;
+  if (path && q.pathKind) keys.push('path:' + q.pathKind + ':' + path);
+  if (q.targetRegion) keys.push('region:' + q.targetRegion);
+  if (q.rock) keys.push('rock:' + q.rock);
+  if (q.site) keys.push('site:' + q.site.id);
+  return keys;
+}
+
+function questionPrimaryKey(q, i = 0) {
+  const path = q.targetPath || q.revealPath;
+  if (path && q.pathKind) return 'path:' + q.pathKind + ':' + path;
+  return questionKeys(q)[0] || 'question:' + i;
+}
+
+function questionAnswer(q) {
+  if (q.kind === 'choice') {
+    const right = (q.options || []).find(o => o.correct);
+    return right ? right.label : '';
+  }
+  if (q.kind === 'mapPath') {
+    const books = { route: ROUTE_BY_ID, stream: STREAM_BY_ID, fold: FOLD_BY_ID, bound: BOUND_BY_ID };
+    const it = books[q.pathKind] && books[q.pathKind][q.targetPath];
+    return it ? it.name : '';
+  }
+  if (q.kind === 'mapRegion') return (REGION_BY_ID[q.targetRegion] || {}).name || '';
+  if (q.kind === 'mapPoint') return q.site ? q.site.n : q.text;
+  if (q.kind === 'geoArea') return (ROCKS[q.rock] || {}).name || '';
+  return '';
+}
+
+function questionReveal(q) {
+  const text = [q.text, q.sub, q.explain, questionAnswer(q)];
+  const id = q.targetPath || q.revealPath;
+  if (id && q.pathKind) {
+    const books = { route: ROUTE_BY_ID, stream: STREAM_BY_ID, fold: FOLD_BY_ID, bound: BOUND_BY_ID };
+    const it = books[q.pathKind] && books[q.pathKind][id];
+    if (it) {
+      text.push(it.name, it.note, it.modern, it.guards, it.src, it.out,
+        it.kind === 'anticline' ? 'קמר' : it.kind === 'syncline' ? 'קער' : '',
+        it.rock, it.a, it.b);
+    }
+  }
+  return text.filter(Boolean).join(' | ');
+}
+
+function revealsNextAnswer(prev, next) {
+  if (!prev || !next) return false;
+  const answer = String(questionAnswer(next) || '').trim();
+  return answer.length >= 5 && questionReveal(prev).includes(answer);
+}
+
+function sharesQuestionKey(a, b) {
+  const ak = new Set(questionKeys(a));
+  return questionKeys(b).some(k => ak.has(k));
+}
+
+/* ערבוב רגיל למצבים שאין בהם סדר פנימי מחייב. שאלות עם המפתח
+   הנדיר/צפוף ביותר נבחרות קודם כדי שלא יישאר בסוף זוג בלתי נמנע. */
+function sequenceQuestions(qs, seed, gap = 2) {
+  const rnd = mulberry32(hashStr(seed));
+  const rows = qs.map((q, i) => ({ q, i, tie: rnd() }));
+  const pressure = x => questionKeys(x.q).reduce((n, key) =>
+    n + rows.filter(y => questionKeys(y.q).includes(key)).length, 0);
+  rows.sort((a, b) => pressure(b) - pressure(a) || a.tie - b.tie || a.i - b.i);
+
+  /* שלב מכיל לכל היותר תשע שאלות, ולכן חיפוש קטן עם נסיגה עדיף
+     על ערבוב חמדני שעלול להשאיר דווקא בסוף את הזוג הבעייתי. */
+  const arrange = (minGap, avoidLeak) => {
+    const used = new Set(), out = [];
+    const walk = () => {
+      if (out.length === rows.length) return true;
+      for (const row of rows) {
+        if (used.has(row.i)) continue;
+        const recent = out.slice(-minGap);
+        if (recent.some(q => sharesQuestionKey(q, row.q))) continue;
+        if (avoidLeak && revealsNextAnswer(out[out.length - 1], row.q)) continue;
+        used.add(row.i); out.push(row.q);
+        if (walk()) return true;
+        out.pop(); used.delete(row.i);
+      }
+      return false;
+    };
+    return walk() ? out : null;
+  };
+
+  return arrange(gap, true) || arrange(1, true) || arrange(0, true) ||
+    arrange(1, false) || rows.map(x => x.q);
+}
+
+/* במצבי התוואי חייבים לשמור על סדר פנימי: שאלת האיתור של כל נושא
+   קודמת לשאלות הידע שלו. לכן מערבבים תורים, ולא שאלות בודדות. */
+function sequenceTopicQueues(qs, seed, gap = 2) {
+  const rnd = mulberry32(hashStr(seed));
+  const groups = new Map();
+  qs.forEach((q, i) => {
+    const key = questionPrimaryKey(q, i);
+    if (!groups.has(key)) groups.set(key, { key, rows: [], tie: rnd() });
+    groups.get(key).rows.push(q);
+  });
+  const out = [];
+  while (groups.size) {
+    const recent = out.slice(-gap);
+    let eligible = [...groups.values()].filter(g => {
+      const q = g.rows[0];
+      return !recent.some(prev => sharesQuestionKey(prev, q)) &&
+        !revealsNextAnswer(out[out.length - 1], q);
+    });
+    if (!eligible.length) {
+      eligible = [...groups.values()].filter(g => {
+        const q = g.rows[0];
+        return !sharesQuestionKey(out[out.length - 1] || {}, q) &&
+          !revealsNextAnswer(out[out.length - 1], q);
+      });
+    }
+    if (!eligible.length) eligible = [...groups.values()];
+    eligible.sort((a, b) => b.rows.length - a.rows.length || a.tie - b.tie);
+    const group = eligible[0];
+    out.push(group.rows.shift());
+    if (!group.rows.length) groups.delete(group.key);
+  }
+  return out;
+}
+
+function buildQuestions(mode, level, diff = 1) {
+  const qs = buildQuestionsRaw(mode, level, diff);
+  /* שלוש שאלות ההדרכה נשארות יחד בכוונה; הסדר הפנימי שלהן כבר
+     מטופל ב-orderedGuideRows. רצפי התוואי פוזרו לפני חלוקת השלבים. */
+  if (mode === 'guide' || mode === 'routes' || mode === 'streams' ||
+      mode === 'folds' || mode === 'bounds') return qs;
+  return sequenceQuestions(qs, 'question-order#' + mode + '#' + diff + '#' + level, 2);
 }
 
 /* ------------------------------------ תרגול טעויות ----
@@ -1593,7 +1759,7 @@ function maybeInjectGuide(q) {
   if (q.kind !== 'mapPoint' || q.guide || q.guideDone) return;
   const site = q.site;
   if (!site) return;
-  const rows = guideRowsFor(site);
+  const rows = orderedGuideRows(site, site.f);
   if (!rows.length) return;
   q.guideDone = true;
   const rnd = mulberry32(hashStr('gq' + site.id + G.level));
