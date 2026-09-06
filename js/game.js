@@ -40,10 +40,50 @@ const DEFAULT_CLASS = 'קמ"ד שרון 26-27';
 const DEFAULT_SAVE = {
   coins: 120, xp: 0, stars: {}, best: {},
   sound: 1, haptic: 1, labels: 1, guideQ: 1, theme: 'auto', topo: 'auto', relief: 1, contours: 1,
-  daily: {}, seen: {}, misses: [], welcomed: 0,
+  daily: {}, seen: {}, misses: [], welcomed: 0, cver: {}, fresh: {},
   streak: 0, bestStreak: 0, shields: 0, lastActive: '', log: {},
   build: null
 };
+
+/* ------------------------------------------ גרסת תוכן ---- */
+/* כששאלות של מצב משתנות, מי שכבר סיים אותו רואה "הכול הושלם"
+   ולעולם לא יפגוש את התוכן החדש. לכן לכל מצב ששוכתב יש מספר
+   גרסה, וכשהוא עולה השלבים שהשתנו נפתחים מחדש.
+
+   from – השלב הראשון שהשתנה בפועל. שלבים שלפניו לא נגעו בהם,
+   ואין סיבה לקחת בחזרה כוכבים שהורווחו עליהם ביושר. */
+let CONTENT_RESET = [];   /* מה אופס בטעינה הזאת, להודעה החד-פעמית */
+const CONTENT_VER = {
+  /* v2: שלבים 3-8 הוחלפו בשאלות תיאור ויחסים במרחב. 1-2 נשארו. */
+  regionFind: { v: 2, from: 3, name: 'אזורי הארץ' }
+};
+
+/* מקבל אובייקט שמירה, מאפס בו את מה שהתיישן ומחזיר את מה שאופס.
+   נקרא גם על השמירה המקומית וגם על תוצאת המיזוג מהענן – בלי זה
+   הכוכבים הישנים היו חוזרים מהמכשיר השני. */
+function applyContentGate(save) {
+  if (!save || !save.stars) return [];
+  const cur = save.cver || {};
+  const done = [];
+  for (const mode in CONTENT_VER) {
+    const { v, from, name } = CONTENT_VER[mode];
+    if ((cur[mode] || 0) >= v) continue;
+    let n = 0;
+    Object.keys(save.stars).forEach(k => {
+      if (k !== mode && !k.startsWith(mode + ':')) return;
+      Object.keys(save.stars[k]).forEach(lv => {
+        if (+lv < from) return;
+        delete save.stars[k][lv];
+        if (save.best) delete save.best[k + ':' + lv];
+        n++;
+      });
+    });
+    cur[mode] = v;
+    if (n) done.push({ mode, name, from, n });
+  }
+  save.cver = cur;
+  return done;
+}
 
 const Store = (() => {
   const probe = s => {
@@ -75,11 +115,23 @@ let SAVE = load();
 function load() {
   try {
     const raw = Store.get();
-    if (!raw) return { ...DEFAULT_SAVE };
+    /* שחקן חדש: אין מה לאפס, אבל מחתימים את הגרסה הנוכחית כדי
+       שהשער לא ירוץ סתם בכל טעינה. */
+    if (!raw) {
+      const fresh = { ...DEFAULT_SAVE, cver: {}, fresh: {} };
+      for (const m in CONTENT_VER) fresh.cver[m] = CONTENT_VER[m].v;
+      return fresh;
+    }
     const d = JSON.parse(raw);
-    return { ...DEFAULT_SAVE, ...d, stars: d.stars || {}, best: d.best || {},
+    const out = { ...DEFAULT_SAVE, ...d, stars: d.stars || {}, best: d.best || {},
       seen: d.seen || {}, misses: Array.isArray(d.misses) ? d.misses : [],
+      cver: d.cver || {}, fresh: d.fresh || {},
       log: d.log && typeof d.log === 'object' ? d.log : {} };
+    /* מסמנים את המצבים שאופסו: התג "חדש" נשאר עד שמשחקים בהם,
+       וההודעה החד-פעמית מסבירה למה ההתקדמות נראית כאילו ירדה. */
+    CONTENT_RESET = applyContentGate(out);
+    CONTENT_RESET.forEach(r => { out.fresh[r.mode] = r.from; });
+    return out;
   } catch (e) { return { ...DEFAULT_SAVE }; }
 }
 function persist() {
@@ -318,7 +370,6 @@ const DIFFS = [
   { id: 3, name: 'מתקדם',  sub: 'למורה ותיק' }
 ];
 const diffKey = (mode, diff) => BY_DIFF.has(mode) ? mode + ':' + diff : mode;
-
 const RANKS = [
   [0, 'מתלמד'], [400, 'מדריך מתחיל'], [1200, 'מורה דרך'],
   [2600, 'מורה דרך בכיר'], [4800, 'מומחה הארץ'], [8000, 'אלוף המפה']
@@ -1172,6 +1223,7 @@ function renderModes() {
     b.className = 'mode-card';
     b.style.setProperty('--mc', m.color);
     b.innerHTML = `
+      ${SAVE.fresh && SAVE.fresh[m.id] ? '<span class="mode-new">חדש</span>' : ''}
       <div class="mode-ico">${m.icon}</div>
       <h3>${m.name}</h3>
       <p>${m.tag}</p>
@@ -2021,6 +2073,10 @@ function finishGame() {
     /* התרגול לא מזכה בכוכבים – הרווח הוא שהטעויות יורדות מהיומן */
   } else {
     const key = diffKey(G.mode, G.diff);
+    /* התג יורד ברגע שנפגשת בפועל עם התוכן החדש */
+    if (SAVE.fresh && SAVE.fresh[G.mode] && G.level >= SAVE.fresh[G.mode]) {
+      delete SAVE.fresh[G.mode];
+    }
     SAVE.stars[key] = SAVE.stars[key] || {};
     SAVE.stars[key][G.level] = Math.max(SAVE.stars[key][G.level] || 0, stars);
     SAVE.best[key + ':' + G.level] = Math.max(SAVE.best[key + ':' + G.level] || 0, G.score);
@@ -2876,6 +2932,12 @@ function boot() {
   $('#opt-contours').checked = !!SAVE.contours;
   bind();
   applyTopo();
+  if (CONTENT_RESET.length) {
+    const r = CONTENT_RESET[0];
+    setTimeout(() => toast(
+      '✨ "' + r.name + '" התחדש – שלבים ' + r.from + ' ומעלה נפתחו מחדש עם שאלות חדשות',
+      5200), 900);
+  }
   renderHUD();
   renderModes();
   show('home');

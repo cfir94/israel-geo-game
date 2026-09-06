@@ -921,6 +921,13 @@ p { margin: 0; }
 .board-row .sc { font-size: 13px; font-weight: 800; color: var(--gold); direction: ltr; unicode-bidi: isolate; }
 .board-empty { text-align: center; color: var(--txt-dim); font-size: 13.5px; padding: 30px 10px; line-height: 1.6; }
 
+/* תג "חדש" על מצב שהתוכן בו התחדש והשלבים שלו נפתחו מחדש */
+.mode-new {
+  position: absolute; inset-block-start: 8px; inset-inline-start: 8px;
+  background: var(--teal); color: #fff; font-size: 10.5px; font-weight: 800;
+  padding: 2px 7px; border-radius: 99px; letter-spacing: .2px;
+}
+
 /* ---------- שכבת תבליט ---------- */
 /* התמונה נבנתה בגוני מצב בהיר. אי אפשר להפוך אותה במצב כהה – ירוק
    וחום הפוכים אינם טופוגרפיה – ולכן רק מכהים ומנמיכים רוויה, כדי

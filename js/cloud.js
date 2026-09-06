@@ -313,6 +313,17 @@ const Cloud = (() => {
       out.stars[k] = maxMap((local.stars || {})[k], (remote.stars || {})[k]);
     }
 
+    /* גרסת התוכן נלקחת דווקא בנמוך מבין השניים, ולא בגבוה: אם צד
+       אחד עוד לא עבר את האיפוס, הכוכבים המיושנים שלו נמצאים כרגע
+       במיזוג, וצריך להריץ עליהם את השער שוב. applyContentGate
+       יעלה אחר כך את המספר לנוכחי. */
+    const cverKeys = new Set([...Object.keys(local.cver || {}), ...Object.keys(remote.cver || {})]);
+    out.cver = {};
+    for (const k of cverKeys) {
+      out.cver[k] = Math.min((local.cver || {})[k] || 0, (remote.cver || {})[k] || 0);
+    }
+    if (typeof applyContentGate === 'function') applyContentGate(out);
+
     /* אתגר יומי: המאוחר מבין השניים */
     const ld = local.daily || {}, rd = remote.daily || {};
     out.daily = (ld.key || '') >= (rd.key || '') ? ld : rd;
