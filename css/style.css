@@ -1197,3 +1197,49 @@ p { margin: 0; }
 .geo-reveal .lifelines { display: none !important; }
 .geo-reveal .ans:not(.correct):not(.wrong) { display: none; }
 .geo-reveal .map-shell { min-height: 46vh; }
+
+/* ============================================================
+   מחשב (moreh-derech, 18.11): עד עכשיו המשחק נפתח במחשב כעמודת טלפון של 560px.
+   מעל 1000px: מסך רחב, אתגרים ברשת רחבה, ובשאלות מפה המפה עומדת לצד השאלה
+   ולא מתחתיה. הטלפון לא משתנה.
+   ============================================================ */
+@media (min-width: 1000px) {
+  #app { max-width: 1240px; }
+  .screen { padding-inline: 32px; }
+
+  /* מסכים של טקסט: עמודה נוחה לקריאה במרכז */
+  #screen-levels, #screen-result, #screen-build, #screen-atlas, #screen-board {
+    padding-inline: max(32px, calc((100% - 820px) / 2));
+  }
+  #screen-home { padding-inline: max(32px, calc((100% - 1100px) / 2)); }
+
+  .modes { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .levels { grid-template-columns: repeat(6, 1fr); }
+  .prompt h3 { font-size: 26px; }
+  .ans { font-size: 17px; }
+
+  /* שאלה בלי מפה: עמודה ממורכזת */
+  #screen-play.active { align-items: center; }
+  #screen-play.active > * { width: 100%; max-width: 720px; }
+
+  /* שאלה עם מפה: השאלה והתשובות מימין, המפה בגובה המסך משמאל */
+  #screen-play.active:has(.map-shell.on) {
+    display: grid;
+    grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+    grid-auto-rows: min-content;
+    column-gap: 28px;
+    align-content: start;
+  }
+  #screen-play.active:has(.map-shell.on) > * { grid-column: 1; max-width: none; }
+  #screen-play.active:has(.map-shell.on) > .map-shell {
+    grid-column: 2;
+    grid-row: 1 / span 12;
+    height: calc(100dvh - var(--safe-t) - var(--safe-b) - 28px);
+    margin-bottom: 0;
+  }
+
+  /* גיליונות: חלון במרכז במקום מגירה מלמטה */
+  .sheet { align-items: center; }
+  .sheet-card { border-radius: 24px; border-bottom: 1px solid var(--line); max-width: 600px; }
+  .sheet-grab { display: none; }
+}
