@@ -2624,29 +2624,40 @@ function renderAccount() {
 
 /* נשאר תואם לקריאות ישנות – הטופס אחד ואין יותר לשוניות */
 function setAccTab() {
-  $('#acc-submit').textContent = 'כניסה';
+  const waiting = !$('#fld-code').hidden;
+  $('#acc-submit').textContent = waiting ? 'כניסה' : 'שליחת קוד למייל';
 }
 
-/* כניסה בצעד אחד: שם ואימייל. הסיסמה נגזרת מהאימייל ב-cloud.js,
-   ולכן אותה כתובת נכנסת לאותו חשבון מכל מכשיר. שדה הסיסמה נחשף
-   רק אם קיים חשבון ישן שנוצר עם סיסמה משלו. */
+/* כניסה בשני צעדים (26.11): שם ואימייל, ואז הקוד שהגיע במייל.
+   עד אז הסיסמה נגזרה מהאימייל, וכל מי שידע אימייל יכל להיכנס. */
 async function submitAccount() {
   const email = $('#acc-email').value.trim();
   const name = $('#acc-name').value.trim();
   const cls = normClass($('#acc-class').value);
-  const pass = $('#acc-pass').value;
+  const code = $('#acc-code').value.trim();
+  const waiting = !$('#fld-code').hidden;
   const err = $('#acc-err');
   err.textContent = '';
 
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) { err.textContent = 'צריך כתובת אימייל תקינה'; return; }
-  if (!name && $('#fld-pass').hidden) { err.textContent = 'צריך שם לתצוגה'; return; }
+  if (waiting && !/\d{4,}/.test(code)) { err.textContent = 'הקלידו את הקוד מהמייל'; return; }
 
   const btn = $('#acc-submit');
   btn.disabled = true;
   btn.textContent = 'רגע…';
   try {
-    if (!$('#fld-pass').hidden && pass) await Cloud.signIn(email, pass);
-    else await Cloud.quickAuth(email, name, cls);
+    if (!waiting) {
+      await Cloud.requestCode(email, name, cls);
+      $('#fld-code').hidden = false;
+      $('#acc-email').readOnly = true;
+      err.textContent = 'שלחנו קוד ל-' + email + '. הוא מגיע תוך דקה, ולפעמים לתיקיית הספאם.';
+      $('#acc-code').focus();
+      return;
+    }
+    await Cloud.verifyCode(email, code, name, cls);
+    $('#fld-code').hidden = true;
+    $('#acc-code').value = '';
+    $('#acc-email').readOnly = false;
     await cloudSyncIn();
     dismissWelcome();
     renderAccount();
@@ -2661,18 +2672,15 @@ async function submitAccount() {
     SFX.coin();
     toast('שלום ' + (Cloud.current().display_name || name || '') + ' · ההתקדמות נשמרת');
   } catch (e) {
-    const msg = friendlyAuthError(e);
-    /* חשבון שנוצר בעבר עם סיסמה – נותנים דרך להיכנס אליו */
-    if (/סיסמה|credential/i.test(msg) && $('#fld-pass').hidden) {
-      $('#fld-pass').hidden = false;
-      err.textContent = 'לאימייל הזה כבר יש חשבון עם סיסמה. הקלידו אותה, או השתמשו באימייל אחר.';
-    } else {
-      err.textContent = msg;
+    err.textContent = /expired|invalid|otp/i.test(e.message || '') ? 'הקוד לא נכון או שפג תוקפו. בקשו קוד חדש.' : friendlyAuthError(e);
+    if (waiting && /expired|invalid|otp/i.test(e.message || '')) {
+      $('#fld-code').hidden = true;
+      $('#acc-email').readOnly = false;
     }
     SFX.bad();
   } finally {
     btn.disabled = false;
-    btn.textContent = 'כניסה';
+    setAccTab();
   }
 }
 
@@ -3011,7 +3019,7 @@ function bind() {
     toast('אפשר לפתוח חשבון בכל רגע מהכפתור למעלה');
   };
   $('#acc-submit').onclick = submitAccount;
-  $('#acc-pass').addEventListener('keydown', e => { if (e.key === 'Enter') submitAccount(); });
+  $('#acc-code').addEventListener('keydown', e => { if (e.key === 'Enter') submitAccount(); });
   $('#acc-signout').onclick = doSignOut;
   $('#acc-board').onclick = () => { $('#account').classList.remove('on'); openBoard(); };
   $('#btn-board').onclick = () => { SFX.tap(); openBoard(); };
