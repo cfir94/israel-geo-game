@@ -300,15 +300,15 @@
           <p>רשמו שם ואימייל כדי שההתקדמות תישמר ותוכלו להמשיך מכל מכשיר — ולראות את עצמכם בלוח הקבוצה.</p>
         </div>
         <h3 id="acc-title">כניסה</h3>
-        <p class="acc-lead" id="acc-lead">בלי סיסמה — רק שם ואימייל. ההתקדמות נשמרת בענן ואפשר להמשיך מכל מכשיר.</p>
+        <p class="acc-lead" id="acc-lead">בלי סיסמה: שולחים לכם קוד למייל. ההתקדמות נשמרת בענן ואפשר להמשיך מכל מכשיר.</p>
         <label class="fld" id="fld-name"><span>שם לתצוגה</span>
           <input id="acc-name" type="text" autocomplete="nickname" placeholder="איך שיופיע בלוח הקבוצה"></label>
         <label class="fld"><span>אימייל</span>
           <input id="acc-email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com"></label>
         <label class="fld"><span>כיתה / מחזור</span>
           <input id="acc-class" type="text" autocomplete="off" placeholder="קמ״ד שרון 26-27"></label>
-        <label class="fld" id="fld-pass" hidden><span>סיסמה</span>
-          <input id="acc-pass" type="password" autocomplete="current-password" placeholder="הסיסמה של החשבון הקיים"></label>
+        <label class="fld" id="fld-code" hidden><span>הקוד שקיבלתם במייל</span>
+          <input id="acc-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456" dir="ltr"></label>
         <p class="acc-err" id="acc-err"></p>
         <button class="pill-btn primary" id="acc-submit">כניסה</button>
         <button class="pill-btn ghost" id="acc-guest">להמשיך כאורח</button>

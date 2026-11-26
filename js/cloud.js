@@ -139,44 +139,34 @@ const Cloud = (() => {
   function signOut() { saveSession(null); }
   const current = () => session;
 
-  /* ---------------------------------------- כניסה בלי סיסמה --
-     Supabase דורש סיסמה, ולכן היא נגזרת מהאימייל עצמו: אותו
-     אימייל נותן תמיד את אותה סיסמה, ולכן אפשר להיכנס מכל מכשיר
-     בלי לזכור דבר.
-
-     המשמעות: האימייל הוא האסמכתה היחידה. מי שיודע את האימייל של
-     מישהו אחר יכול להיכנס לחשבונו ולראות או לדרוס את ההתקדמות
-     שלו. בשביל משחק תרגול שמחזיק נקודות וכוכבים בלבד זה מקובל,
-     ולא היינו עושים את זה במערכת עם מידע רגיש.            */
-  /* אזהרה: המלח הזה קובע את הסיסמה של כל חשבון. שינוי שלו – גם
-     סתם התאמה לשם חדש של המשחק – ינתק כל משתמש קיים מהחשבון שלו
-     לצמיתות. הוא נשאר בשמו ההיסטורי בכוונה. */
-  const SALT = 'mapat-haaretz/v1';
-  async function derivePass(email) {
-    const data = new TextEncoder().encode(email.trim().toLowerCase() + '|' + SALT);
-    const buf = await crypto.subtle.digest('SHA-256', data);
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-    /* אותיות, ספרות וסימן – עומד בדרישות המורכבות של Supabase */
-    return 'Gg1!' + b64.replace(/[^A-Za-z0-9]/g, '').slice(0, 28);
+  /* ------------------------------------------ כניסה בקוד למייל --
+     עד 26.11 הסיסמה נגזרה מהאימייל, ולכן מי שידע את האימייל של
+     מישהו יכל להיכנס לחשבונו. עכשיו Supabase שולח למייל קוד חד־פעמי,
+     בדיוק כמו באתר moreyderech.com, שחולק איתנו את אותם חשבונות.
+     משתמש חדש נוצר מעצמו (create_user), ומשתמש קיים נכנס לאותו
+     user_id, כך שההתקדמות נשמרת.                                */
+  async function requestCode(rawEmail, displayName, rawClass) {
+    const email = rawEmail.trim().toLowerCase();
+    const redirect = '?redirect_to=' + encodeURIComponent(location.origin + location.pathname);
+    await call('/auth/v1/otp' + redirect, {
+      method: 'POST', auth: false,
+      body: { email, create_user: true, data: { display_name: (displayName || '').trim(), class_code: normClass(rawClass) } }
+    });
+    return email;
   }
 
-  /* נרשם אם זו הפעם הראשונה, ומתחבר אם החשבון כבר קיים */
-  async function quickAuth(email, displayName, rawClass) {
+  async function verifyCode(rawEmail, rawCode, displayName, rawClass) {
+    const email = rawEmail.trim().toLowerCase();
+    const token = String(rawCode).replace(/\D/g, '');
+    const r = await call('/auth/v1/verify', { method: 'POST', auth: false, body: { type: 'email', email, token } });
+    saveSession(unpack(r, displayName));
     const classCode = normClass(rawClass);
-    const pass = await derivePass(email);
-    try {
-      return await signUp(email, pass, displayName, classCode);
-    } catch (e) {
-      if (e.needsConfirm) throw e;
-      const s = await signIn(email, pass);
-      /* שם וכיתה מתעדכנים אם הוקלדו מחדש */
-      if ((displayName && displayName !== s.display_name) || classCode) {
-        saveSession({ ...s, display_name: displayName || s.display_name,
-          class_code: classCode || s.class_code });
-        await ensureProfile(displayName, classCode);
-      }
-      return session;
+    /* שם וכיתה שהוקלדו עכשיו גוברים; אחרת נשארים אלה שבחשבון */
+    if ((displayName && displayName !== session.display_name) || classCode) {
+      saveSession({ ...session, display_name: displayName || session.display_name, class_code: classCode || session.class_code });
     }
+    await ensureProfile(session.display_name, session.class_code);
+    return session;
   }
 
   /* ----------------------------------------------- פרופיל -- */
@@ -352,7 +342,7 @@ const Cloud = (() => {
 
   return {
     get enabled() { return on(); },
-    loadSession, current, signUp, signIn, signOut, quickAuth,
+    loadSession, current, signUp, signIn, signOut, requestCode, verifyCode,
     pull, push, leaderboard, merge, ensureProfile,
     classWeek, classFeed, classRoster, pushActivity, logEvent, setClass
   };
