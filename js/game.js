@@ -360,6 +360,8 @@ MODES.push({ id: 'history', name: 'ידיעת המדינה', icon: '🎖️', co
   desc: 'שנות המלחמות, סדר ראשי הממשלה והנשיאים, מבצעים חשובים ורמטכ"לים בזמן אמת – הידע ההיסטורי שנדרש בבחינת ההסמכה.' });
 MODES.push({ id: 'periods', name: 'ציר הזמן', icon: '📜', color: '#c9925a', tag: 'מהברונזה ועד המדינה',
   desc: 'שש-עשרה תקופות, מהברונזה והברזל ועד המנדט והמדינה: הסדר הכרונולוגי, מי כבש את מי, ומי בנה מה.' });
+MODES.push({ id: 'topics', name: 'נושאים במבחן', icon: '📝', color: '#e08a4a', tag: 'שלב לכל נושא שכיח בחלק ב׳',
+  desc: 'הנושאים שחוזרים בשאלות חלק ב׳ של מבחן הרישוי: דתות ועדות, גאולוגיה, מים, אקולוגיה, התיישבות, תקופות קדומות, תנ״ך וארכיאולוגיה, אדם ומדבר והתיישבות יהודית. בכל שלב – האתרים מסיורי הקורס שמתאימים לנושא: איפה הם, ובאיזה חבל ארץ.' });
 const MODE_BY_ID = Object.fromEntries(MODES.map(m => [m.id, m]));
 
 /* מצבים שמחולקים לרמות קושי לפי האתרים */
@@ -475,6 +477,7 @@ function levelCount(mode, diff = 1) {
        ולא התקדמות. עכשיו המספר נגזר מהתוכן: שני שלבי שמות, ואחריהם
        שלבי תיאור ושלבי יחסים במרחב. */
     case 'regionFind': return REGION_LEVELS.length;
+    case 'topics': return EXAM_TOPICS.length;
     case 'trivia': return evenLevels(TRIVIA.length, GAME_CONFIG.questionsPerLevel);
     case 'unesco': return 5;
     case 'rockAt': return Math.ceil(GEO_AREAS.length / GAME_CONFIG.questionsPerLevel);
@@ -1036,6 +1039,31 @@ function buildQuestionsRaw(mode, level, diff = 1) {
     return pathSlice(mode, level);
   }
 
+  /* נושאים במבחן: לכל אתר של הנושא – איפה הוא, ובאיזה חבל ארץ. */
+  if (mode === 'topics') {
+    const t = EXAM_TOPICS[level - 1] || EXAM_TOPICS[0];
+    const qs = [];
+    t.sites.forEach(s => {
+      qs.push({
+        kind: 'mapPoint', showMap: true, site: s, time: 25,
+        kicker: t.emoji + ' ' + t.title + ' · מקמו על המפה',
+        text: s.n, sub: CATEGORIES[s.c].icon + ' ' + CATEGORIES[s.c].name,
+        target: { lat: s.lat, lon: s.lon },
+        hint: { text: 'האזור: ' + REGION_BY_ID[s.r].name, region: s.r },
+        explain: s.f
+      });
+      qs.push({
+        kind: 'mapRegion', showMap: true, mapMode: 'regions', site: s, time: 20,
+        kicker: t.emoji + ' ' + t.title + ' · באיזה חבל ארץ?',
+        text: s.n, sub: 'לחצו על האזור הנכון במפה',
+        targetRegion: s.r,
+        hint: { text: REGION_BY_ID[s.r].desc },
+        explain: s.n + ' – ' + REGION_BY_ID[s.r].name + '. ' + s.f
+      });
+    });
+    return shuffle(qs, rnd).slice(0, 10);
+  }
+
   if (mode === 'unesco') {
     const qs = [];
     const nonU = SITES.filter(s => !s.u);
@@ -1431,10 +1459,14 @@ function openLevels(mode, diff) {
   const stars = SAVE.stars[diffKey(mode, curDiff)] || {};
   for (let i = 1; i <= total; i++) {
     const got = stars[i] || 0;
-    const unlocked = i === 1 || (stars[i - 1] || 0) > 0;
+    /* בנושאים כל שלב עומד בפני עצמו, ולכן כולם פתוחים ומוצגים בשם הנושא */
+    const topic = mode === 'topics' ? EXAM_TOPICS[i - 1] : null;
+    const unlocked = !!topic || i === 1 || (stars[i - 1] || 0) > 0;
     const b = document.createElement('button');
-    b.className = 'level-btn' + (unlocked ? (got ? ' done' : '') : ' locked');
-    b.innerHTML = unlocked
+    b.className = 'level-btn' + (topic ? ' topic' : '') + (unlocked ? (got ? ' done' : '') : ' locked');
+    b.innerHTML = topic
+      ? `<span class="num">${topic.emoji}</span><span class="tname">${topic.title}</span><span class="st">${'★'.repeat(got).replace(/★/g, '<b>★</b>')}${'☆'.repeat(3 - got)}</span>`
+      : unlocked
       ? `<span class="num">${i}</span><span class="st">${'★'.repeat(got).replace(/★/g, '<b>★</b>')}${'☆'.repeat(3 - got)}</span>`
       : `<span class="num">🔒</span><span class="st">נעול</span>`;
     b.onclick = () => {
@@ -2271,6 +2303,8 @@ function finishGame() {
       ? 'חזרו מחר לאתגר חדש'
       : G.nearby
         ? 'האתרים הקרובים ביותר למיקום שלכם עכשיו'
+        : G.mode === 'topics' && EXAM_TOPICS[G.level - 1]
+        ? MODE_BY_ID[G.mode].name + ' · ' + EXAM_TOPICS[G.level - 1].title
         : MODE_BY_ID[G.mode].name + ' · ' +
           (BY_DIFF.has(G.mode) ? DIFFS[G.diff - 1].name + ' · ' : '') + 'שלב ' + G.level;
   $('#res-score').textContent = G.score;
@@ -2288,6 +2322,11 @@ function finishGame() {
         <div class="rv"><span class="mk">${r.q.site ? CATEGORIES[r.q.site.c].icon : '📌'}</span>
         <div><b>${r.q.site ? r.q.site.n : r.q.text}</b><p>${(r.q.explain || '').slice(0, 150)}</p></div></div>`).join('')
     : '<div class="rv"><span class="mk">🏅</span><div><b>ללא טעויות</b><p>סיבוב מושלם – אתם מוכנים לשטח.</p></div></div>';
+
+  /* בסוף שלב נושא: הקישור לעמוד הנושא באתר – מה המבחן שאל, ואיך בונים יום כזה */
+  const tp = G.mode === 'topics' && !G.daily && !G.practice && !G.nearby ? EXAM_TOPICS[G.level - 1] : null;
+  if (tp) rv.insertAdjacentHTML('afterbegin', `<a class="rv topic-link" href="${TOPICS_SITE}${tp.id}/" target="_blank" rel="noopener">
+      <span class="mk">${tp.emoji}</span><div><b>${tp.title} במבחן</b><p>מה נשאל, אילו אתרים מתאימים ואיך בונים יום – בעמוד הנושא באתר ←</p></div></a>`);
 
   const hasNext = !solo && G.level < levelCount(G.mode, G.diff) && stars > 0;
   $('#res-next').style.display = hasNext ? 'block' : 'none';
