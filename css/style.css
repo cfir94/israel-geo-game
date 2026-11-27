@@ -1243,3 +1243,9 @@ p { margin: 0; }
   .sheet-card { border-radius: 24px; border-bottom: 1px solid var(--line); max-width: 600px; }
   .sheet-grab { display: none; }
 }
+
+/* נושאים במבחן: כפתור שלב רחב עם שם הנושא */
+.level-btn.topic { min-width: 0; padding: 8px 6px; gap: 3px; }
+.level-btn.topic .num { font-size: 26px; }
+.level-btn .tname { overflow-wrap: anywhere; font-size: 12.5px; font-weight: 800; line-height: 1.2; text-align: center; }
+a.rv.topic-link { text-decoration: none; color: inherit; border: 1.5px solid var(--mc, #e08a4a); }
